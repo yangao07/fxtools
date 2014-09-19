@@ -229,4 +229,6 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "cigar-parse") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0) fxt_len_parse(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
+
+    return 0;
 }
