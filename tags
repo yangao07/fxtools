@@ -1,0 +1,48 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+AC_KSEQ_H	kseq.h	31;"	d
+CBACK	fxtools.h	26;"	d
+CDEL	fxtools.h	12;"	d
+CDIFF	fxtools.h	25;"	d
+CEQUAL	fxtools.h	23;"	d
+CHARD_CLIP	fxtools.h	19;"	d
+CIGAR_STR	fxtools.h	3;"	d
+CINS	fxtools.h	10;"	d
+CMATCH	fxtools.h	8;"	d
+CPAD	fxtools.h	21;"	d
+CREF_SKIP	fxtools.h	14;"	d
+CSOFT_CLIP	fxtools.h	17;"	d
+KSEQ_INIT	fxtools.c	/^KSEQ_INIT(gzFile, gzread)$/;"	f
+KSEQ_INIT	kseq.h	217;"	d
+KSTREAM_INIT	kseq.h	139;"	d
+KSTRING_T	kseq.h	81;"	d
+KS_SEP_MAX	kseq.h	39;"	d
+KS_SEP_SPACE	kseq.h	37;"	d
+KS_SEP_TAB	kseq.h	38;"	d
+__KSEQ_BASIC	kseq.h	145;"	d
+__KSEQ_READ	kseq.h	170;"	d
+__KSEQ_TYPE	kseq.h	210;"	d
+__KS_BASIC	kseq.h	51;"	d
+__KS_GETC	kseq.h	67;"	d
+__KS_GETUNTIL	kseq.h	92;"	d
+__KS_TYPE	kseq.h	41;"	d
+__kstring_t	kseq.h	/^typedef struct __kstring_t {$/;"	s
+fxt_cigar_parse	fxtools.c	/^int fxt_cigar_parse(int argc, char *argv[])$/;"	f
+fxt_filter	fxtools.c	/^int fxt_filter(int argc, char* argv[])$/;"	f
+fxt_fq2fa	fxtools.c	/^int fxt_fq2fa(int argc, char *argv[])$/;"	f
+fxt_len_parse	fxtools.c	/^int fxt_len_parse(int argc, char *argv[])$/;"	f
+fxt_re_co	fxtools.c	/^int fxt_re_co(int argc, char *argv[])$/;"	f
+kroundup32	kseq.h	89;"	d
+ks_eof	kseq.h	48;"	d
+ks_rewind	kseq.h	49;"	d
+kstring_t	kseq.h	/^} kstring_t;$/;"	t	typeref:struct:__kstring_t
+l	kseq.h	/^	size_t l, m;$/;"	m	struct:__kstring_t
+m	kseq.h	/^	size_t l, m;$/;"	m	struct:__kstring_t
+main	fxtools.c	/^int main(int argc, char*argv[])$/;"	f
+nt_char	fxtools.h	/^char nt_char[5] = { 'A', 'C', 'G', 'T', 'N' };$/;"	v
+nt_table	fxtools.h	/^static int8_t nt_table[128] = {$/;"	v
+s	kseq.h	/^	char *s;$/;"	m	struct:__kstring_t
