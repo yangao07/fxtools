@@ -1,6 +1,6 @@
 
 //copy from samtools-0.1.19
-#define CIGAR_STR "MIDNSHP=XB"
+#define CIGAR_STR "MIDNSHP=XBV"
 /*
   CIGAR operations.
  */
@@ -24,6 +24,7 @@
 /*! @abstract CIGAR: X = mismatch */
 #define CDIFF       8
 #define CBACK       9
+#define	CINV		10
 
 static int8_t nt_table[128] = {
 		4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4,  4, 4, 4, 4, 

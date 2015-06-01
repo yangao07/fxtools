@@ -22,10 +22,10 @@ int usage(void)
 
 int fxt_filter(int argc, char* argv[])
 {
-    if (argc != 5) 
+    if (argc != 4) 
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools filter <in.fa/fq> <out.fa/fq> <lower-bound> <upper-bound>(-1 for NO bound)\n");
+        fprintf(stderr, "Usage: fxtools filter <in.fa/fq> <lower-bound> <upper-bound>(-1 for NO bound)\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
@@ -37,30 +37,27 @@ int fxt_filter(int argc, char* argv[])
     }
     kseq_t *seq;
     seq = kseq_init(infp);
-    FILE *outfp = fopen(argv[2], "w");
-    int low = atoi(argv[3]);
-    int upper = atoi(argv[4]);
+    int low = atoi(argv[2]);
+    int upper = atoi(argv[3]);
     while (kseq_read(seq) >= 0)
     {
         if ((low != -1 && seq->seq.l < low) || (upper != -1 && seq->seq.l > upper))
             continue;
         if (seq->qual.l != 0)
         {
-            fprintf(outfp, "@%s\n", seq->name.s);
-            fprintf(outfp, "%s\n", seq->seq.s);
-            fprintf(outfp, "+\n");
-            fprintf(outfp, "%s\n", seq->qual.s);
+            fprintf(stdout, "@%s\n", seq->name.s);
+            fprintf(stdout, "%s\n", seq->seq.s);
+            fprintf(stdout, "+\n");
+            fprintf(stdout, "%s\n", seq->qual.s);
         }
         else
         {
-            fprintf(outfp, ">%s\n", seq->name.s);
-            fprintf(outfp, "%s\n", seq->seq.s);
+            fprintf(stdout, ">%s\n", seq->name.s);
+            fprintf(stdout, "%s\n", seq->seq.s);
         }
     }
 
     gzclose(infp);
-    fclose(outfp);
-
     return 0;
 }
 
@@ -155,7 +152,7 @@ int fxt_cigar_parse(int argc, char *argv[])
     }
     int cigar_len, i, seq_len;
     int c;
-    long x, op[10] = {0};
+    long x, op[11] = {0};
     char *s, *t;
 
     cigar_len = seq_len = 0;
@@ -181,13 +178,14 @@ int fxt_cigar_parse(int argc, char *argv[])
             case '=':   op[CEQUAL]+=x, seq_len+=x;    break;
             case 'X':   op[CDIFF]+=x, seq_len+=x; break;
             case 'B':   op[CBACK]+=x; break;  
+			case 'V':	op[CINV]+=x, seq_len+=x;	break;
             default:    fprintf(stderr, "[fxtools cigar-parse] Cigar ERROR 2.\n"); exit(-1); break;
         }
         //modify variable directly OR use a auxiliary-variable
         ++cigar_len;
         s = t+1;
     }
-    for (i = 0; i < 10; ++i)
+    for (i = 0; i < 11; ++i)
     {
         if (op[i] != 0) fprintf(stdout, "%ld%c\t", op[i], CIGAR_STR[i]);
     }
