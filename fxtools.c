@@ -12,6 +12,7 @@ int usage(void)
     fprintf(stderr, "Usage:   fxtools <command> [options]\n\n");
     fprintf(stderr, "Command: filter            filter fa/fq sequences with specified length bound.\n");
     fprintf(stderr, "         fq2fa             convert FASTQ format data to FASTA format data.\n");
+    fprintf(stderr, "         fa2fq             convert FASTA format data to FASTQ format data.\n");
     fprintf(stderr, "         re-co             convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
     fprintf(stderr, "         cigar-parse       parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse      parse the length of sequences in fa/fq file.\n");
@@ -82,6 +83,38 @@ int fxt_fq2fa(int argc, char *argv[])
     {
         fprintf(outfp, ">%s\n", seq->name.s);
         fprintf(outfp, "%s\n", seq->seq.s);
+    }
+
+    gzclose(infp);
+    fclose(outfp);
+    return 0;
+}
+
+int fxt_fa2fq(int argc, char *argv[])
+{
+    if (argc != 3)
+    {
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fa2fq <in.fa> <out.fq>\n\n");
+        exit(-1);
+    } 
+    gzFile infp = gzopen(argv[1], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_fa2fq] Can't open %s.\n", argv[1]);
+        exit(-1);
+    }
+    kseq_t *seq;
+    seq = kseq_init(infp);
+    FILE *outfp = fopen(argv[2], "w");
+
+    int i;
+    while (kseq_read(seq) >= 0)
+    {
+        fprintf(outfp, "@%s\n", seq->name.s);
+        fprintf(outfp, "%s\n", seq->seq.s);
+        fprintf(outfp, "+\n");
+        for (i = 0; i < seq->seq.l; ++i) fprintf(outfp, "!");
+        fprintf(outfp, "\n");
     }
 
     gzclose(infp);
@@ -218,11 +251,13 @@ int fxt_len_parse(int argc, char *argv[])
     gzclose(infp);
     return 0;
 }
+
 int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
     if (strcmp(argv[1], "filter") == 0) fxt_filter(argc-1, argv+1);
     else if (strcmp(argv[1], "fq2fa") == 0) fxt_fq2fa(argc-1, argv+1);
+    else if (strcmp(argv[1], "fa2fq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0) fxt_re_co(argc-1, argv+1);
     else if (strcmp(argv[1], "cigar-parse") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0) fxt_len_parse(argc-1, argv+1);
