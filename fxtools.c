@@ -17,7 +17,7 @@ int usage(void)
     fprintf(stderr, "         fq2fa             convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq             convert FASTA format data to FASTQ format data.\n");
     fprintf(stderr, "         re-co             convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
-    fprintf(stderr, "         seq-display       display a specific region of FASTA/FASTQ file.\n");
+    fprintf(stderr, "         seq-display       display a specified region of FASTA/FASTQ file.\n");
     fprintf(stderr, "         cigar-parse       parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse      parse the length of sequences in fa/fq file.\n");
     fprintf(stderr, "         merge-fa          merge the reads with same read name in fasta/fastq file.\n");
