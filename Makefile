@@ -1,5 +1,6 @@
 CC=			gcc
-CFLAGS=		-g -Wall -O0
+CFLAGS=		-Wall -O3
+DFLAGS=		-g -Wall -O0
 OBJS=		fxtools.o
 PROG=		fxtools
 LIB=		-lz

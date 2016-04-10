@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <zlib.h>
+#include <stdint.h>
 #include "fxtools.h"
 #include "kseq.h"
+
+#define _ll_t long long
 
 KSEQ_INIT(gzFile, gzread)
 
@@ -14,6 +17,7 @@ int usage(void)
     fprintf(stderr, "         fq2fa             convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq             convert FASTA format data to FASTQ format data.\n");
     fprintf(stderr, "         re-co             convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
+    fprintf(stderr, "         seq-display       display a specific region of FASTA/FASTQ file.\n");
     fprintf(stderr, "         cigar-parse       parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse      parse the length of sequences in fa/fq file.\n");
     fprintf(stderr, "         merge-fa          merge the reads with same read name in fasta/fastq file.\n");
@@ -39,11 +43,11 @@ int fxt_filter(int argc, char* argv[])
     }
     kseq_t *seq;
     seq = kseq_init(infp);
-    int low = atoi(argv[2]);
-    int upper = atoi(argv[3]);
+    int64_t low = atoi(argv[2]);
+    int64_t upper = atoi(argv[3]);
     while (kseq_read(seq) >= 0)
     {
-        if ((low != -1 && seq->seq.l < low) || (upper != -1 && seq->seq.l > upper))
+        if ((low != -1 && (int64_t)seq->seq.l < low) || (upper != -1 && (int64_t)seq->seq.l > upper))
             continue;
         if (seq->qual.l != 0)
         {
@@ -108,13 +112,13 @@ int fxt_fa2fq(int argc, char *argv[])
     seq = kseq_init(infp);
     FILE *outfp = fopen(argv[2], "w");
 
-    int i;
+    int64_t i;
     while (kseq_read(seq) >= 0)
     {
         fprintf(outfp, "@%s\n", seq->name.s);
         fprintf(outfp, "%s\n", seq->seq.s);
         fprintf(outfp, "+\n");
-        for (i = 0; i < seq->seq.l; ++i) fprintf(outfp, "!");
+        for (i = 0; i < (int64_t)seq->seq.l; ++i) fprintf(outfp, "!");
         fprintf(outfp, "\n");
     }
 
@@ -174,6 +178,46 @@ int fxt_re_co(int argc, char *argv[])
     kseq_destroy(read_seq);
     fclose(out);
 
+    return 0;
+}
+
+int fxt_seq_dis(int argc, char *argv[])
+{
+    if (argc != 5)
+    {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools seq-display <in.fa/fq> chr/read_name start_pos(1-based) length\n");
+        fprintf(stderr, "\n"); 
+        exit(-1);
+    }
+    gzFile infp = gzopen(argv[1], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_seq_dis] Can't open %s.\n", argv[1]);
+        exit(-1);
+    }
+    char name[1024]; uint64_t start; int len;
+    strcpy(name, argv[2]); start = atol(argv[3]); len = atoi(argv[4]);
+    kseq_t *seq;
+    seq = kseq_init(infp);
+    while (kseq_read(seq) >= 0)
+    {
+        if (strcmp(seq->name.s, name) == 0) {
+            if (start > seq->seq.l) {
+                fprintf(stderr, "[fxt_seq_dis] Error: START_POS is longger than the length of chr/read. (%lld > %lld)\n", (_ll_t)start, (_ll_t)seq->seq.l);
+                exit(-1);
+            } else if (start + len - 1 > seq->seq.l) {
+                fprintf(stderr, "[fxt_seq_dis] Error: START_POS+LEN is longger than the length of chr/read. (%lld > %lld)\n", (_ll_t)start+len-1, (_ll_t)seq->seq.l);
+            } else {
+                seq->seq.s[start+len-1] = '\0';
+            }
+            fprintf(stdout, "%s\n", seq->seq.s+start-1);
+            gzclose(infp);
+            return 0;
+        }
+    }
+    gzclose(infp);
+    fprintf(stderr, "[fxt_seq_dis] Error: Can't find %s in %s.\n", name, argv[1]);
     return 0;
 }
 
@@ -239,7 +283,7 @@ int fxt_len_parse(int argc, char *argv[])
     gzFile infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
-        fprintf(stderr, "[fxt_filter] Can't open %s.\n", argv[1]);
+        fprintf(stderr, "[fxt_len_parse] Can't open %s.\n", argv[1]);
         exit(-1);
     }
     kseq_t *seq;
@@ -274,7 +318,6 @@ int fxt_merge_fa(int argc, char *argv[])
     char *read_qual = (char*)calloc(10, 1);
     int w_seq_n=0;
 
-    int i;
     while (kseq_read(seq) >= 0)
     {
         if (strcmp(seq->name.s, read_name) == 0) {
@@ -334,6 +377,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "fq2fa") == 0) fxt_fq2fa(argc-1, argv+1);
     else if (strcmp(argv[1], "fa2fq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0) fxt_re_co(argc-1, argv+1);
+    else if (strcmp(argv[1], "seq-display") == 0) fxt_seq_dis(argc-1, argv+1);
     else if (strcmp(argv[1], "cigar-parse") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0) fxt_len_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-fa") == 0) fxt_merge_fa(argc-1, argv+1);
