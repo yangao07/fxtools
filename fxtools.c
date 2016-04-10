@@ -16,6 +16,7 @@ int usage(void)
     fprintf(stderr, "         re-co             convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
     fprintf(stderr, "         cigar-parse       parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse      parse the length of sequences in fa/fq file.\n");
+    fprintf(stderr, "         merge-fa          merge the reads with same read name in fasta/fastq file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -252,6 +253,80 @@ int fxt_len_parse(int argc, char *argv[])
     return 0;
 }
 
+int fxt_merge_fa(int argc, char *argv[])
+{
+    if (argc != 3) {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools merge_fa <in.fa/fq> <out.fa/fq>\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+    gzFile infp = gzopen(argv[1], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_merge_fa] Can't open %s.\n", argv[1]);
+        exit(-1);
+    }
+    kseq_t *seq = kseq_init(infp);
+    FILE *outfp = fopen(argv[2], "w");
+    char read_name[1024]; 
+    char *read_seq = (char*)calloc(10, 1);
+    char *read_qual = (char*)calloc(10, 1);
+    int w_seq_n=0;
+
+    int i;
+    while (kseq_read(seq) >= 0)
+    {
+        if (strcmp(seq->name.s, read_name) == 0) {
+            w_seq_n += seq->seq.l;
+            read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
+            strcat(read_seq, seq->seq.s);
+            read_seq[w_seq_n] = 0;
+            if (seq->qual.l > 0) {
+                read_qual = (char*)realloc(read_qual, w_seq_n+seq->seq.l);
+                strcat(read_qual, seq->qual.s);
+                read_qual[w_seq_n] = 0;
+            }
+        } else {
+            if (w_seq_n > 0) {
+                if (seq->qual.l > 0) { // fastq
+                    fprintf(outfp, "@%s\n", read_name);
+                    fprintf(outfp, "%s\n", read_seq);
+                    fprintf(outfp, "+\n");
+                    fprintf(outfp, "%s\n", read_qual);
+                } else { // fasta
+                    fprintf(outfp, ">%s\n", read_name);
+                    fprintf(outfp, "%s\n", read_seq);
+                }
+            }
+            w_seq_n = seq->seq.l;
+            strcpy(read_name, seq->name.s);
+            read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
+            strcpy(read_seq, seq->seq.s);
+            read_seq[w_seq_n] = 0;
+            if (seq->qual.l > 0) {
+                read_qual = (char*)realloc(read_qual, w_seq_n+seq->seq.l);
+                strcpy(read_qual, seq->qual.s);
+                read_qual[w_seq_n] = 0;
+            }
+        }
+    }
+    if (w_seq_n > 0) { // last read
+        if (seq->qual.l > 0) { // fastq
+            fprintf(outfp, "@%s\n", read_name);
+            fprintf(outfp, "%s\n", read_seq);
+            fprintf(outfp, "+\n");
+            fprintf(outfp, "%s\n", read_qual);
+        } else { // fasta
+            fprintf(outfp, ">%s\n", read_name);
+            fprintf(outfp, "%s\n", read_seq);
+        }
+    }
+    gzclose(infp);
+    fclose(outfp);
+    return 0;
+}
+
 int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
@@ -261,6 +336,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "re-co") == 0) fxt_re_co(argc-1, argv+1);
     else if (strcmp(argv[1], "cigar-parse") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0) fxt_len_parse(argc-1, argv+1);
+    else if (strcmp(argv[1], "merge-fa") == 0) fxt_merge_fa(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
