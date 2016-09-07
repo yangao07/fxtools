@@ -13,14 +13,14 @@ int usage(void)
 {
     fprintf(stderr, "Program: fxtools (fasta and fastq data tools)\n");
     fprintf(stderr, "Usage:   fxtools <command> [options]\n\n");
-    fprintf(stderr, "Command: filter            filter fa/fq sequences with specified length bound.\n");
-    fprintf(stderr, "         fq2fa             convert FASTQ format data to FASTA format data.\n");
-    fprintf(stderr, "         fa2fq             convert FASTA format data to FASTQ format data.\n");
-    fprintf(stderr, "         re-co             convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
-    fprintf(stderr, "         seq-display       display a specified region of FASTA/FASTQ file.\n");
-    fprintf(stderr, "         cigar-parse       parse the given cigar(stdout).\n");
-    fprintf(stderr, "         length-parse      parse the length of sequences in fa/fq file.\n");
-    fprintf(stderr, "         merge-fa          merge the reads with same read name in fasta/fastq file.\n");
+    fprintf(stderr, "Command: filter (fl)         filter fa/fq sequences with specified length bound.\n");
+    fprintf(stderr, "         fq2fa (qa)         convert FASTQ format data to FASTA format data.\n");
+    fprintf(stderr, "         fa2fq (aq)         convert FASTA format data to FASTQ format data.\n");
+    fprintf(stderr, "         re-co (rc)         convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
+    fprintf(stderr, "         seq-display (sd)    display a specified region of FASTA/FASTQ file.\n");
+    fprintf(stderr, "         cigar-parse (cp)    parse the given cigar(stdout).\n");
+    fprintf(stderr, "         length-parse (lp)   parse the length of sequences in fa/fq file.\n");
+    fprintf(stderr, "         merge-fa (mf)       merge the reads with same read name in fasta/fastq file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -373,14 +373,14 @@ int fxt_merge_fa(int argc, char *argv[])
 int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
-    if (strcmp(argv[1], "filter") == 0) fxt_filter(argc-1, argv+1);
-    else if (strcmp(argv[1], "fq2fa") == 0) fxt_fq2fa(argc-1, argv+1);
-    else if (strcmp(argv[1], "fa2fq") == 0) fxt_fa2fq(argc-1, argv+1);
-    else if (strcmp(argv[1], "re-co") == 0) fxt_re_co(argc-1, argv+1);
-    else if (strcmp(argv[1], "seq-display") == 0) fxt_seq_dis(argc-1, argv+1);
-    else if (strcmp(argv[1], "cigar-parse") == 0) fxt_cigar_parse(argc-1, argv+1);
-    else if (strcmp(argv[1], "length-parse") == 0) fxt_len_parse(argc-1, argv+1);
-    else if (strcmp(argv[1], "merge-fa") == 0) fxt_merge_fa(argc-1, argv+1);
+    if (strcmp(argv[1], "filter") == 0 || strcmp(argv[1], "fl") == 0) fxt_filter(argc-1, argv+1);
+    else if (strcmp(argv[1], "fq2fa") == 0 || strcmp(argv[1], "qa") == 0) fxt_fq2fa(argc-1, argv+1);
+    else if (strcmp(argv[1], "fa2fq") == 0 || strcmp(argv[1], "aq") == 0) fxt_fa2fq(argc-1, argv+1);
+    else if (strcmp(argv[1], "re-co") == 0 || strcmp(argv[1], "rc") == 0) fxt_re_co(argc-1, argv+1);
+    else if (strcmp(argv[1], "seq-display") == 0 || strcmp(argv[1], "sd") == 0) fxt_seq_dis(argc-1, argv+1);
+    else if (strcmp(argv[1], "cigar-parse") == 0 || strcmp(argv[1], "cp") == 0) fxt_cigar_parse(argc-1, argv+1);
+    else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
+    else if (strcmp(argv[1], "merge-fa") == 0 || strcmp(argv[1], "mf") == 0) fxt_merge_fa(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
