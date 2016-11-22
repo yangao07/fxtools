@@ -228,12 +228,12 @@ int fxt_cigar_parse(int argc, char *argv[])
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools cigar-parse <input-cigar>\n\n");
         return 1;
     }
-    int cigar_len, i, seq_len;
+    int cigar_len, i, seq_len, ref_len;
     int c;
     long x, op[11] = {0};
     char *s, *t;
 
-    cigar_len = seq_len = 0;
+    cigar_len = seq_len = ref_len = 0;
     for (s = argv[1]; *s; )
     {
         x = strtol(s, &t, 10);  
@@ -246,17 +246,17 @@ int fxt_cigar_parse(int argc, char *argv[])
         c = toupper(*t);
         switch (c)
         {
-            case 'M':   op[CMATCH]+=x, seq_len+=x;    break;
+            case 'M':   op[CMATCH]+=x, seq_len+=x, ref_len+=x;    break;
             case 'I':   op[CINS]+=x, seq_len+=x;      break;
-            case 'D':   op[CDEL]+=x;      break;
-            case 'N':   op[CREF_SKIP]+=x;     break;
+            case 'D':   op[CDEL]+=x, ref_len+=x;      break;
+            case 'N':   op[CREF_SKIP]+=x, ref_len+=x;     break;
             case 'S':   op[CSOFT_CLIP]+=x, seq_len+=x;    break;
             case 'H':   op[CHARD_CLIP]+=x;    break;
             case 'P':   op[CPAD]+=x;          break;
-            case '=':   op[CEQUAL]+=x, seq_len+=x;    break;
-            case 'X':   op[CDIFF]+=x, seq_len+=x; break;
+            case '=':   op[CEQUAL]+=x, seq_len+=x, ref_len+=x;    break;
+            case 'X':   op[CDIFF]+=x, seq_len+=x, ref_len+=x; break;
             case 'B':   op[CBACK]+=x; break;  
-			case 'V':	op[CINV]+=x, seq_len+=x;	break;
+			case 'V':	op[CINV]+=x, seq_len+=x, ref_len+=x;	break;
             default:    fprintf(stderr, "[fxtools cigar-parse] Cigar ERROR 2.\n"); exit(-1); break;
         }
         //modify variable directly OR use a auxiliary-variable
@@ -267,7 +267,7 @@ int fxt_cigar_parse(int argc, char *argv[])
     {
         if (op[i] != 0) fprintf(stdout, "%ld%c\t", op[i], CIGAR_STR[i]);
     }
-    fprintf(stdout, "\nseq-len: %d\n", seq_len);
+    fprintf(stdout, "\nseq-len: %d\nref-len: %d\n", seq_len, ref_len);
     return 0;
 }
 
