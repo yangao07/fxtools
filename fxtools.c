@@ -35,7 +35,9 @@ int fxt_filter(int argc, char* argv[])
         fprintf(stderr, "\n");
         exit(-1);
     }
-    gzFile infp = gzopen(argv[1], "r");
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
         fprintf(stderr, "[fxt_filter] Can't open %s.\n", argv[1]);
@@ -74,7 +76,9 @@ int fxt_fq2fa(int argc, char *argv[])
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fq2fa <in.fq> <out.fa>\n\n");
         exit(-1);
     } 
-    gzFile infp = gzopen(argv[1], "r");
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
         fprintf(stderr, "[fxt_fq2fa] Can't open %s.\n", argv[1]);
@@ -102,7 +106,9 @@ int fxt_fa2fq(int argc, char *argv[])
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fa2fq <in.fa> <out.fq>\n\n");
         exit(-1);
     } 
-    gzFile infp = gzopen(argv[1], "r");
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
         fprintf(stderr, "[fxt_fa2fq] Can't open %s.\n", argv[1]);
@@ -142,7 +148,8 @@ int fxt_re_co(int argc, char *argv[])
     int8_t *seq_n = (int8_t*)malloc(seq_len*sizeof(int8_t));
     FILE *out = fopen(argv[2], "w");
 
-    readfp = gzopen(argv[1], "r");
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) readfp = gzdopen(fileno(stdin), "r");
+    else readfp = gzopen(argv[1], "r");
     read_seq = kseq_init(readfp);
 
     int len, i;
@@ -190,7 +197,9 @@ int fxt_seq_dis(int argc, char *argv[])
         fprintf(stderr, "\n"); 
         exit(-1);
     }
-    gzFile infp = gzopen(argv[1], "r");
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
         fprintf(stderr, "[fxt_seq_dis] Can't open %s.\n", argv[1]);
@@ -280,7 +289,9 @@ int fxt_len_parse(int argc, char *argv[])
         fprintf(stderr, "\n"); 
         exit(-1);
     }
-    gzFile infp = gzopen(argv[1], "r");
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
         fprintf(stderr, "[fxt_len_parse] Can't open %s.\n", argv[1]);
@@ -305,7 +316,9 @@ int fxt_merge_fa(int argc, char *argv[])
         fprintf(stderr, "\n");
         exit(-1);
     }
-    gzFile infp = gzopen(argv[1], "r");
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
     if (infp == NULL)
     {
         fprintf(stderr, "[fxt_merge_fa] Can't open %s.\n", argv[1]);
