@@ -438,7 +438,7 @@ int fxt_error_parse(int argc, char *argv[])
         fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, ins, del, mis, match, clip, skip);
     }
     fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
-    fprintf(stdout, "Total read: %lld\nTotal unmap: %lld\n", tol_n, unmap);
+    fprintf(stdout, "Total mapped read: %lld\nTotal unmapped read: %lld\nTotal read: %lld\n", tol_n-unmap, unmap, tol_n);
     return 0;
 }
 
