@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include <zlib.h>
 #include <stdint.h>
+#include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
+#include "htslib/htslib/sam.h"
 
 #define _ll_t long long
 
@@ -14,13 +16,14 @@ int usage(void)
     fprintf(stderr, "Program: fxtools (fasta and fastq data tools)\n");
     fprintf(stderr, "Usage:   fxtools <command> [options]\n\n");
     fprintf(stderr, "Command: filter (fl)         filter fa/fq sequences with specified length bound.\n");
-    fprintf(stderr, "         fq2fa (qa)         convert FASTQ format data to FASTA format data.\n");
-    fprintf(stderr, "         fa2fq (aq)         convert FASTA format data to FASTQ format data.\n");
-    fprintf(stderr, "         re-co (rc)         convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
+    fprintf(stderr, "         fq2fa (qa)          convert FASTQ format data to FASTA format data.\n");
+    fprintf(stderr, "         fa2fq (aq)          convert FASTA format data to FASTQ format data.\n");
+    fprintf(stderr, "         re-co (rc)          convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
     fprintf(stderr, "         seq-display (sd)    display a specified region of FASTA/FASTQ file.\n");
     fprintf(stderr, "         cigar-parse (cp)    parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse (lp)   parse the length of sequences in fa/fq file.\n");
     fprintf(stderr, "         merge-fa (mf)       merge the reads with same read name in fasta/fastq file.\n");
+    fprintf(stderr, "         error-parse (ep)    parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -382,6 +385,56 @@ int fxt_merge_fa(int argc, char *argv[])
     fclose(outfp);
     return 0;
 }
+#define bam_unmap(b) ((b)->core.flag & BAM_FUNMAP)
+
+int fxt_error_parse(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools error-parse <input.bam> > error.out\n\n");
+        return 1;
+    }
+    fprintf(stdout, "READ_NAME\tREAD_LEN\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
+    int i, seq_len, md, ins, del, mis, match, clip, skip;
+
+    samFile *in; bam_hdr_t *h; bam1_t *b;
+    if ((in = sam_open(argv[optind], "rb")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[optind]);
+    b = bam_init1(); 
+
+    while (sam_read1(in, h, b) >= 0) {
+        seq_len = b->core.l_qseq;
+        md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+        if (!bam_unmap(b)) {
+            uint32_t *cigar = bam_get_cigar(b); int cigar_len = b->core.n_cigar;
+            for (i = 0; i < cigar_len; ++i) {
+                uint32_t c = cigar[i];
+                int len = bam_cigar_oplen(c);
+                switch (bam_cigar_op(c)) {
+                    case BAM_CMATCH: match += len; break;
+                    case BAM_CINS: ins += len; break;
+                    case BAM_CDEL: del += len; break;
+                    case BAM_CREF_SKIP: skip += len; break;
+                    case BAM_CSOFT_CLIP: clip += len; break;
+                    case BAM_CHARD_CLIP: clip += len; break;
+                    default : err_fatal_simple("Cigar ERROR.\n");
+                }
+            }
+            uint8_t *p = bam_aux_get(b, "NM");
+            if (p == 0) p = bam_aux_get(b, "nM");
+            if (p == 0) {
+                err_fatal_core(__func__, "%s No \"NM\" tag.\n", bam_get_qname(b));
+                return 0;
+            }
+            md = bam_aux2i(p);
+            mis = md - ins - del;
+            match = match - mis;
+        }
+
+        fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, ins, del, mis, match, clip, skip);
+    }
+    return 0;
+}
 
 int main(int argc, char*argv[])
 {
@@ -394,6 +447,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "cigar-parse") == 0 || strcmp(argv[1], "cp") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-fa") == 0 || strcmp(argv[1], "mf") == 0) fxt_merge_fa(argc-1, argv+1);
+    else if (strcmp(argv[1], "error-parse") == 0 || strcmp(argv[1], "ep") == 0) fxt_error_parse(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
