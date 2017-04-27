@@ -385,6 +385,7 @@ int fxt_merge_fa(int argc, char *argv[])
     fclose(outfp);
     return 0;
 }
+
 #define bam_unmap(b) ((b)->core.flag & BAM_FUNMAP)
 
 int fxt_error_parse(int argc, char *argv[])
@@ -395,6 +396,7 @@ int fxt_error_parse(int argc, char *argv[])
         return 1;
     }
     fprintf(stdout, "READ_NAME\tREAD_LEN\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
+    long long tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
     int i, seq_len, md, ins, del, mis, match, clip, skip;
 
     samFile *in; bam_hdr_t *h; bam1_t *b;
@@ -430,9 +432,11 @@ int fxt_error_parse(int argc, char *argv[])
             mis = md - ins - del;
             match = match - mis;
         }
+        tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
 
         fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, ins, del, mis, match, clip, skip);
     }
+    fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
     return 0;
 }
 
