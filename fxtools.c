@@ -432,7 +432,7 @@ int fxt_error_parse(int argc, char *argv[])
             md = bam_aux2i(p);
             mis = md - ins - del;
             match = match - mis;
-        } else unmap = 0;
+        } else unmap++;
         tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
 
         fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, ins, del, mis, match, clip, skip);
