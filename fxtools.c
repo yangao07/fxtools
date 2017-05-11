@@ -35,6 +35,7 @@ int usage(void)
 
 void print_seq(FILE *out, kseq_t *seq)
 {
+    if (seq->seq.l == 0) return;
     if (seq->qual.l != 0)
     {
         fprintf(out, "@%s\n", seq->name.s);
