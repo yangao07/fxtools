@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <zlib.h>
 #include <stdint.h>
+#include <string.h>
 #include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
 #include "htslib/htslib/sam.h"
+#include "htslib/htslib/faidx.h"
 
 #define _ll_t long long
 
@@ -193,44 +195,45 @@ int fxt_re_co(int argc, char *argv[])
 
 int fxt_seq_dis(int argc, char *argv[])
 {
-    if (argc != 5)
+    if (argc != 3)
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools seq-display <in.fa/fq> chr/read_name start_pos(1-based) length\n");
+        fprintf(stderr, "Usage: fxtools seq-display <in.fa/fq> <reg(chr/read_name:start_pos(1-based)-end_pos)\n");
         fprintf(stderr, "\n"); 
         exit(-1);
     }
-    gzFile infp;
-    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
-    else infp = gzopen(argv[1], "r");
-    if (infp == NULL)
-    {
-        fprintf(stderr, "[fxt_seq_dis] Can't open %s.\n", argv[1]);
-        exit(-1);
-    }
-    char name[1024]; uint64_t start; int len;
-    strcpy(name, argv[2]); start = atol(argv[3]); len = atoi(argv[4]);
-    kseq_t *seq;
-    seq = kseq_init(infp);
-    while (kseq_read(seq) >= 0)
-    {
-        if (strcmp(seq->name.s, name) == 0) {
-            if (start > seq->seq.l) {
-                fprintf(stderr, "[fxt_seq_dis] Error: START_POS is longger than the length of chr/read. (%lld > %lld)\n", (_ll_t)start, (_ll_t)seq->seq.l);
-                exit(-1);
-            } else if (start + len - 1 > seq->seq.l) {
-                fprintf(stderr, "[fxt_seq_dis] Error: START_POS+LEN is longger than the length of chr/read. (%lld > %lld)\n", (_ll_t)start+len-1, (_ll_t)seq->seq.l);
-            } else {
-                seq->seq.s[start+len-1] = '\0';
-            }
-            fprintf(stdout, "%s\n", seq->seq.s+start-1);
-            gzclose(infp);
-            return 0;
+    faidx_t *fai = fai_load(argv[1]);
+    if ( !fai ) {
+        fprintf(stderr, "Could not load fai index of %s\n", argv[1]);
+        fprintf(stderr, "Building fai index of %s\n", argv[1]);
+        if (fai_build(argv[1]) != 0) {
+            fprintf(stderr, "Could not build fai index %s.fai\n", argv[1]);
+            return EXIT_FAILURE;
         }
     }
-    gzclose(infp);
-    fprintf(stderr, "[fxt_seq_dis] Error: Can't find %s in %s.\n", name, argv[1]);
-    return 0;
+
+    int exit_status = EXIT_SUCCESS;
+
+    printf(">%s\n", argv[2]);
+    int seq_len;
+    char *seq = fai_fetch(fai, argv[2], &seq_len);
+    if ( seq_len < 0 ) {
+        err_printf("Failed to fetch sequence in %s\n", argv[2]);
+        exit_status = EXIT_FAILURE;
+        return exit_status;
+    }
+    size_t i, seq_sz = seq_len;
+    for (i=0; i<seq_sz; i+=60)
+    {
+        size_t len = i + 60 < seq_sz ? 60 : seq_sz - i;
+        if (fwrite(seq + i, 1, len, stdout) < len ||
+                putchar('\n') == EOF) {
+            err_fatal_simple("failed to write output");
+        }
+    }
+    free(seq);
+    fai_destroy(fai);
+    return exit_status;
 }
 
 int fxt_cigar_parse(int argc, char *argv[])
@@ -313,9 +316,10 @@ int fxt_len_parse(int argc, char *argv[])
 
 int fxt_merge_fa(int argc, char *argv[])
 {
-    if (argc != 3) {
+    if (argc != 3 && argc != 4) {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools merge_fa <in.fa/fq> <out.fa/fq>\n");
+        fprintf(stderr, "Usage: fxtools merge_fa <in.fa/fq> <out.fa/fq> [N]\n");
+        fprintf(stderr, "         optional: use N to separate merged sequences\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
@@ -334,15 +338,20 @@ int fxt_merge_fa(int argc, char *argv[])
     char *read_qual = (char*)calloc(10, 1);
     int w_seq_n=0;
 
+    char sep[5];
+    if (argc == 4) strcpy(sep, "N");
+    else strcpy(sep, "");
     while (kseq_read(seq) >= 0)
     {
         if (strcmp(seq->name.s, read_name) == 0) {
             w_seq_n += seq->seq.l;
             read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
+            strcat(read_seq, sep);
             strcat(read_seq, seq->seq.s);
             read_seq[w_seq_n] = 0;
             if (seq->qual.l > 0) {
                 read_qual = (char*)realloc(read_qual, w_seq_n+seq->seq.l);
+                strcat(read_qual, "!");
                 strcat(read_qual, seq->qual.s);
                 read_qual[w_seq_n] = 0;
             }
