@@ -18,16 +18,19 @@ int usage(void)
 {
     fprintf(stderr, "Program: fxtools (fasta and fastq data tools)\n");
     fprintf(stderr, "Usage:   fxtools <command> [options]\n\n");
-    fprintf(stderr, "Command: filter (fl)         filter fa/fq sequences with specified length bound.\n");
-    fprintf(stderr, "         filter-name (fn)    filter fa/fq sequences with specified name.\n");
-    fprintf(stderr, "         fq2fa (qa)          convert FASTQ format data to FASTA format data.\n");
-    fprintf(stderr, "         fa2fq (aq)          convert FASTA format data to FASTQ format data.\n");
-    fprintf(stderr, "         re-co (rc)          convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
-    fprintf(stderr, "         seq-display (sd)    display a specified region of FASTA/FASTQ file.\n");
-    fprintf(stderr, "         cigar-parse (cp)    parse the given cigar(stdout).\n");
-    fprintf(stderr, "         length-parse (lp)   parse the length of sequences in fa/fq file.\n");
-    fprintf(stderr, "         merge-fa (mf)       merge the reads with same read name in fasta/fastq file.\n");
-    fprintf(stderr, "         error-parse (ep)    parse indel and mismatch error based on CIGAR and NM in bam file.\n");
+    fprintf(stderr, "Command: \n");
+    fprintf(stderr, "         filter (fl)           filter fa/fq sequences with specified length bound.\n");
+    fprintf(stderr, "         filter-name (fn)      filter fa/fq sequences with specified name.\n");
+    fprintf(stderr, "         filter-bam (fb)       filter bam/sam records with specified read length bound.\n");
+    fprintf(stderr, "         filter-bam-name (fbn) filter bam/sam records with specified read name.\n");
+    fprintf(stderr, "         fq2fa (qa)            convert FASTQ format data to FASTA format data.\n");
+    fprintf(stderr, "         fa2fq (aq)            convert FASTA format data to FASTQ format data.\n");
+    fprintf(stderr, "         re-co (rc)            convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
+    fprintf(stderr, "         seq-display (sd)      display a specified region of FASTA/FASTQ file.\n");
+    fprintf(stderr, "         cigar-parse (cp)      parse the given cigar(stdout).\n");
+    fprintf(stderr, "         length-parse (lp)     parse the length of sequences in fa/fq file.\n");
+    fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in fasta/fastq file.\n");
+    fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -84,6 +87,35 @@ int fxt_filter(int argc, char* argv[])
     return 0;
 }
 
+int fxt_filter_bam(int argc, char *argv[])
+{
+    if (argc != 4) 
+    {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools filter-bam <in.bam/sam> <lower-bound> <upper-bound>(-1 for NO bound) > <out.bam>\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+
+    samFile *in, *out; bam_hdr_t *h; bam1_t *b;
+    int seq_len; int64_t low = atoi(argv[2]), upper = atoi(argv[3]);
+    if ((in = sam_open(argv[1], "rb")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[1]);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[1]);
+    b = bam_init1(); 
+
+    if ((out = sam_open_format("-", "wb", NULL)) == NULL) err_fatal_simple("Cannot open \"-\"\n");
+    if (sam_hdr_write(out, h) != 0) err_fatal_simple("Error in writing SAM header\n"); //sam header
+
+    while (sam_read1(in, h, b) >= 0) {
+        seq_len = b->core.l_qseq;
+        if ((low != -1 && (int64_t)seq_len < low) || (upper != -1 && (int64_t)seq_len > upper))
+            continue;
+        if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
+    }
+    bam_destroy1(b); bam_hdr_destroy(h); sam_close(in); sam_close(out);
+    return 0;
+}
+
 int fxt_filter_name(int argc, char* argv[])
 {
     int c, n=0, m=0; char name[1024], sub_name[1024];
@@ -97,7 +129,7 @@ int fxt_filter_name(int argc, char* argv[])
     if (n + m != 1 || argc - optind != 1) 
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools filter [-n name] [-m sub-name] <in.fa/fq> > <out.fa/fq>\n");
+        fprintf(stderr, "Usage: fxtools filter-name [-n name] [-m sub-name] <in.fa/fq> > <out.fa/fq>\n");
         fprintf(stderr, "      -n [STR]    only output read with specified name.\n");
         fprintf(stderr, "      -m [STR]    only output read whose name contain specified string.\n");
         fprintf(stderr, "\n");
@@ -126,6 +158,48 @@ int fxt_filter_name(int argc, char* argv[])
 
     fclose(out);
     gzclose(infp);
+    return 0;
+}
+
+int fxt_filter_bam_name(int argc, char *argv[])
+{
+    int c, n=0, m=0; char name[1024], sub_name[1024];
+    while ((c = getopt(argc, argv, "n:m:")) >= 0) {
+        switch (c) {
+            case 'n': n=1, strcpy(name, optarg); break;
+            case 'm': m=1, strcpy(sub_name, optarg); break;
+            default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
+        }
+    }
+    if (n + m != 1 || argc - optind != 1) 
+    {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools filter-bam-name [-n name] [-m sub-name] <in.bam/sam> > <out.bam>\n");
+        fprintf(stderr, "      -n [STR]    only output bam record with specified read name.\n");
+        fprintf(stderr, "      -m [STR]    only output bam record whose read name contain specified string.\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+
+    samFile *in, *out; bam_hdr_t *h; bam1_t *b;
+    if ((in = sam_open(argv[optind], "rb")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[optind]);
+    b = bam_init1(); 
+
+    if ((out = sam_open_format("-", "wb", NULL)) == NULL) err_fatal_simple("Cannot open \"-\"\n");
+    if (sam_hdr_write(out, h) != 0) err_fatal_simple("Error in writing SAM header\n"); //sam header
+
+    char qname[1024];
+    while (sam_read1(in, h, b) >= 0) {
+        strcpy(qname, bam_get_qname(b));
+        if (n) {
+            if (strcmp(qname, name) != 0) continue;
+        } else { // m
+            if (strstr(qname, sub_name) == NULL) continue;
+        }
+        if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
+    }
+    bam_destroy1(b); bam_hdr_destroy(h); sam_close(in); sam_close(out);
     return 0;
 }
 
@@ -506,11 +580,14 @@ int fxt_error_parse(int argc, char *argv[])
     return 0;
 }
 
+
 int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
     if (strcmp(argv[1], "filter") == 0 || strcmp(argv[1], "fl") == 0) fxt_filter(argc-1, argv+1);
     else if (strcmp(argv[1], "filter-name") == 0 || strcmp(argv[1], "fn") == 0) fxt_filter_name(argc-1, argv+1);
+    else if (strcmp(argv[1], "filter-bam") == 0 || strcmp(argv[1], "fb") == 0) fxt_filter_bam(argc-1, argv+1);
+    else if (strcmp(argv[1], "filter-bam-name") == 0 || strcmp(argv[1], "fbn") == 0) fxt_filter_bam_name(argc-1, argv+1);
     else if (strcmp(argv[1], "fq2fa") == 0 || strcmp(argv[1], "qa") == 0) fxt_fq2fa(argc-1, argv+1);
     else if (strcmp(argv[1], "fa2fq") == 0 || strcmp(argv[1], "aq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0 || strcmp(argv[1], "rc") == 0) fxt_re_co(argc-1, argv+1);
