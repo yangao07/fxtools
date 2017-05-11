@@ -3,6 +3,7 @@
 #include <zlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <getopt.h>
 #include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
@@ -18,6 +19,7 @@ int usage(void)
     fprintf(stderr, "Program: fxtools (fasta and fastq data tools)\n");
     fprintf(stderr, "Usage:   fxtools <command> [options]\n\n");
     fprintf(stderr, "Command: filter (fl)         filter fa/fq sequences with specified length bound.\n");
+    fprintf(stderr, "         filter-name (fn)    filter fa/fq sequences with specified name.\n");
     fprintf(stderr, "         fq2fa (qa)          convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq (aq)          convert FASTA format data to FASTQ format data.\n");
     fprintf(stderr, "         re-co (rc)          convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
@@ -31,12 +33,28 @@ int usage(void)
     return 1;
 }
 
+void print_seq(FILE *out, kseq_t *seq)
+{
+    if (seq->qual.l != 0)
+    {
+        fprintf(out, "@%s\n", seq->name.s);
+        fprintf(out, "%s\n", seq->seq.s);
+        fprintf(out, "+\n");
+        fprintf(out, "%s\n", seq->qual.s);
+    }
+    else
+    {
+        fprintf(out, ">%s\n", seq->name.s);
+        fprintf(out, "%s\n", seq->seq.s);
+    }
+}
+
 int fxt_filter(int argc, char* argv[])
 {
     if (argc != 4) 
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools filter <in.fa/fq> <lower-bound> <upper-bound>(-1 for NO bound)\n");
+        fprintf(stderr, "Usage: fxtools filter <in.fa/fq> <lower-bound> <upper-bound>(-1 for NO bound) > <out.fa/fq>\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
@@ -48,6 +66,7 @@ int fxt_filter(int argc, char* argv[])
         fprintf(stderr, "[fxt_filter] Can't open %s.\n", argv[1]);
         exit(-1);
     }
+    FILE *out = stdout;
     kseq_t *seq;
     seq = kseq_init(infp);
     int64_t low = atoi(argv[2]);
@@ -56,29 +75,64 @@ int fxt_filter(int argc, char* argv[])
     {
         if ((low != -1 && (int64_t)seq->seq.l < low) || (upper != -1 && (int64_t)seq->seq.l > upper))
             continue;
-        if (seq->qual.l != 0)
-        {
-            fprintf(stdout, "@%s\n", seq->name.s);
-            fprintf(stdout, "%s\n", seq->seq.s);
-            fprintf(stdout, "+\n");
-            fprintf(stdout, "%s\n", seq->qual.s);
-        }
-        else
-        {
-            fprintf(stdout, ">%s\n", seq->name.s);
-            fprintf(stdout, "%s\n", seq->seq.s);
-        }
+        print_seq(out, seq);
     }
 
+    fclose(out);
+    gzclose(infp);
+    return 0;
+}
+
+int fxt_filter_name(int argc, char* argv[])
+{
+    int c, n=0, m=0; char name[1024], sub_name[1024];
+    while ((c = getopt(argc, argv, "n:m:")) >= 0) {
+        switch (c) {
+            case 'n': n=1, strcpy(name, optarg); break;
+            case 'm': m=1, strcpy(sub_name, optarg); break;
+            default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
+        }
+    }
+    if (n + m != 1 || argc - optind != 1) 
+    {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools filter [-n name] [-m sub-name] <in.fa/fq> > <out.fa/fq>\n");
+        fprintf(stderr, "      -n [STR]    only output read with specified name.\n");
+        fprintf(stderr, "      -m [STR]    only output read whose name contain specified string.\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+    gzFile infp;
+    if (strcmp(argv[optind],"-") == 0 || strcmp(argv[optind], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[optind], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_filter_name] Can't open %s.\n", argv[optind]);
+        exit(-1);
+    }
+    FILE *out = stdout;
+    kseq_t *seq;
+    seq = kseq_init(infp);
+    while (kseq_read(seq) >= 0)
+    {
+        if (n) {
+            if (strcmp(seq->name.s, name) != 0) continue;
+        } else { // m
+            if (strstr(seq->name.s, sub_name) == NULL) continue;
+        }
+        print_seq(out, seq); 
+    }
+
+    fclose(out);
     gzclose(infp);
     return 0;
 }
 
 int fxt_fq2fa(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 2)
     {
-        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fq2fa <in.fq> <out.fa>\n\n");
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fq2fa <in.fq> > <out.fa>\n\n");
         exit(-1);
     } 
     gzFile infp;
@@ -91,7 +145,7 @@ int fxt_fq2fa(int argc, char *argv[])
     }
     kseq_t *seq;
     seq = kseq_init(infp);
-    FILE *outfp = fopen(argv[2], "w");
+    FILE *outfp = stdout;
 
     while (kseq_read(seq) >= 0)
     {
@@ -106,9 +160,9 @@ int fxt_fq2fa(int argc, char *argv[])
 
 int fxt_fa2fq(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 2)
     {
-        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fa2fq <in.fa> <out.fq>\n\n");
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fa2fq <in.fa> > <out.fq>\n\n");
         exit(-1);
     } 
     gzFile infp;
@@ -121,7 +175,7 @@ int fxt_fa2fq(int argc, char *argv[])
     }
     kseq_t *seq;
     seq = kseq_init(infp);
-    FILE *outfp = fopen(argv[2], "w");
+    FILE *outfp = stdout;
 
     int64_t i;
     while (kseq_read(seq) >= 0)
@@ -140,10 +194,10 @@ int fxt_fa2fq(int argc, char *argv[])
 
 int fxt_re_co(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 2)
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools re-co in.fa/fq out.fa\n"); fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools re-co in.fa/fq > out.fa\n"); fprintf(stderr, "\n");
         return 1;
     }
     gzFile readfp;
@@ -151,7 +205,7 @@ int fxt_re_co(int argc, char *argv[])
     int seq_len = 100000;
     char *seq = (char*)malloc(seq_len*sizeof(char));
     int8_t *seq_n = (int8_t*)malloc(seq_len*sizeof(int8_t));
-    FILE *out = fopen(argv[2], "w");
+    FILE *out = stdout;
 
     if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) readfp = gzdopen(fileno(stdin), "r");
     else readfp = gzopen(argv[1], "r");
@@ -316,9 +370,9 @@ int fxt_len_parse(int argc, char *argv[])
 
 int fxt_merge_fa(int argc, char *argv[])
 {
-    if (argc != 3 && argc != 4) {
+    if (argc != 2 && argc != 3) {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools merge_fa <in.fa/fq> <out.fa/fq> [N]\n");
+        fprintf(stderr, "Usage: fxtools merge_fa <in.fa/fq> [N] > <out.fa/fq>\n");
         fprintf(stderr, "         optional: use N to separate merged sequences\n");
         fprintf(stderr, "\n");
         exit(-1);
@@ -332,14 +386,14 @@ int fxt_merge_fa(int argc, char *argv[])
         exit(-1);
     }
     kseq_t *seq = kseq_init(infp);
-    FILE *outfp = fopen(argv[2], "w");
+    FILE *outfp = stdout;
     char read_name[1024]; 
     char *read_seq = (char*)calloc(10, 1);
     char *read_qual = (char*)calloc(10, 1);
     int w_seq_n=0;
 
     char sep[5];
-    if (argc == 4) strcpy(sep, "N");
+    if (argc == 3) strcpy(sep, "N");
     else strcpy(sep, "");
     while (kseq_read(seq) >= 0)
     {
@@ -455,6 +509,7 @@ int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
     if (strcmp(argv[1], "filter") == 0 || strcmp(argv[1], "fl") == 0) fxt_filter(argc-1, argv+1);
+    else if (strcmp(argv[1], "filter-name") == 0 || strcmp(argv[1], "fn") == 0) fxt_filter_name(argc-1, argv+1);
     else if (strcmp(argv[1], "fq2fa") == 0 || strcmp(argv[1], "qa") == 0) fxt_fq2fa(argc-1, argv+1);
     else if (strcmp(argv[1], "fa2fq") == 0 || strcmp(argv[1], "aq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0 || strcmp(argv[1], "rc") == 0) fxt_re_co(argc-1, argv+1);
