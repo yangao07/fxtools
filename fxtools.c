@@ -445,7 +445,7 @@ int fxt_len_parse(int argc, char *argv[])
 
 int fxt_merge_fa(int argc, char *argv[])
 {
-    if (argc != 3 && argc != 4) {
+    if (argc != 2 && argc != 3) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools merge-fa <in.fa/fq> [N] > <out.fa/fq>\n");
         fprintf(stderr, "         optional: use N to separate merged sequences\n");
@@ -468,7 +468,7 @@ int fxt_merge_fa(int argc, char *argv[])
     int w_seq_n=0;
 
     char sep[5];
-    if (argc == 4) strcpy(sep, "N");
+    if (argc == 3) strcpy(sep, "N");
     else strcpy(sep, "");
     while (kseq_read(seq) >= 0)
     {
