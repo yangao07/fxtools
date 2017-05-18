@@ -324,10 +324,11 @@ int fxt_re_co(int argc, char *argv[])
 
 int fxt_seq_dis(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 5)
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools seq-display <in.fa/fq> <reg(chr/read_name:start_pos(1-based)-end_pos)\n");
+        fprintf(stderr, "Usage: fxtools seq-display <in.fa/fq> <chr/read_name> <start_pos(1-based)> <end_pos>\n");
+        fprintf(stderr, "       use negative coordinate to indicate later part of sequence. (e.g., -1 for last bp)\n");
         fprintf(stderr, "\n"); 
         exit(-1);
     }
@@ -343,11 +344,18 @@ int fxt_seq_dis(int argc, char *argv[])
 
     int exit_status = EXIT_SUCCESS;
 
-    printf(">%s\n", argv[2]);
+    char reg[1024], chr[102]; int start, end;
+    strcpy(chr, argv[2]);
+    start = atoi(argv[3]); end = atoi(argv[4]);
+    int tot_len = faidx_seq_len(fai, chr);
+    if (start < 0) start = tot_len + start + 1;
+    if (end < 0) end = tot_len + end + 1;
+    sprintf(reg, "%s:%d-%d", chr, start, end);
+    printf(">%s\n", reg);
     int seq_len;
-    char *seq = fai_fetch(fai, argv[2], &seq_len);
+    char *seq = fai_fetch(fai, reg, &seq_len);
     if ( seq_len < 0 ) {
-        err_printf("Failed to fetch sequence in %s\n", argv[2]);
+        err_printf("Failed to fetch sequence in %s\n", reg);
         exit_status = EXIT_FAILURE;
         return exit_status;
     }
