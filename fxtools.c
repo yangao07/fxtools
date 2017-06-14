@@ -30,6 +30,7 @@ int usage(void)
     fprintf(stderr, "         cigar-parse (cp)      parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse (lp)     parse the length of sequences in fa/fq file.\n");
     fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in fasta/fastq file.\n");
+    fprintf(stderr, "         merge-filter-fa (mff) merge and filter the reads with same read name in fasta file.\n");
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
@@ -450,6 +451,130 @@ int fxt_len_parse(int argc, char *argv[])
     gzclose(infp);
     return 0;
 }
+int comp(const void *a, const void *b) {return (*(int*)a-*(int*)b); }
+
+int fxt_merge_filter_fa(int argc, char *argv[])
+{
+    if (argc != 3 && argc != 4) {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools merge-fil-fa <in.fa> <2/3> [N] > <out.fa/fq>\n");
+        fprintf(stderr, "         optional: use N to separate merged sequences\n");
+        fprintf(stderr, "         only work with fasta file.\n"); 
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_merge_fa] Can't open %s.\n", argv[1]);
+        exit(-1);
+    }
+    kseq_t *seq = kseq_init(infp);
+    FILE *outfp = stdout;
+    char read_name[1024]; 
+    char *read_seq = (char*)calloc(10, 1);
+    int w_seq_n=0;
+
+    int med = 0, ter = 0, i, j, i1=-1, i2=-1, n=0;
+    int *len=(int*)_err_malloc(100 * sizeof(int)), *tmp=(int*)_err_malloc(100 * sizeof(int));
+    char sep[5]; 
+    if (argc == 4) strcpy(sep, "N");
+    else strcpy(sep, "");
+    if (argv[2][0] == '2') med = 1;
+    else if (argv[2][0] == '3') ter = 1;
+    while (kseq_read(seq) >= 0)
+    {
+        if (strcmp(seq->name.s, read_name) == 0) {
+            w_seq_n += seq->seq.l;
+            len[n++] = seq->seq.l;
+            read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
+            strcat(read_seq, seq->seq.s);
+            read_seq[w_seq_n] = 0;
+        } else {
+            if (w_seq_n > 0) {
+                // cal i1 and i2
+                for (i = 0; i < n; ++i) tmp[i] = len[i];
+                qsort(tmp, n, sizeof(int), comp);
+                if (med == 1) {
+                    for (i = 0; i < n; ++i) {
+                        if (len[i] == tmp[(n-1)/2]) {
+                            i1 = i;
+                            break;
+                        }
+                    }
+                } else {
+                    for (i = 0; i < n; ++i) {
+                        if (len[i] == tmp[(n-1)/3]) {
+                            i1 = i;
+                        } else if (len[i] == tmp[(n-1)*2/3]){
+                            i2 = i;
+                        }
+                    }
+                }
+                fprintf(outfp, ">%s\n", read_name);
+                // filter with i1 and i2
+                int start = 0, end = 0, first = 0;
+                for (i = 0; i < n; ++i) {
+                    end += len[i];
+                    if (i != i1 && i != i2) {
+                        if (first) fprintf(outfp, "%s", sep);
+                        for (j = start; j < end; ++j)
+                            fprintf(outfp, "%c", read_seq[j]);
+                        first = 1;
+                    }
+                    start = end;
+
+                }
+                fprintf(outfp, "\n");
+            }
+            n = 0;
+            w_seq_n = seq->seq.l;
+            len[n++] = seq->seq.l;
+            strcpy(read_name, seq->name.s);
+            read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
+            strcpy(read_seq, seq->seq.s);
+            read_seq[w_seq_n] = 0;
+        }
+    }
+    if (w_seq_n > 0) { // last read
+        // cal i1 and i2
+        for (i = 0; i < n; ++i) tmp[i] = len[i];
+        qsort(tmp, n, sizeof(int), comp);
+        if (med == 1) {
+            for (i = 0; i < n; ++i) {
+                if (len[i] == tmp[(n-1)/2]) {
+                    i1 = i;
+                    break;
+                }
+            }
+        } else {
+            for (i = 0; i < n; ++i) {
+                if (len[i] == tmp[(n-1)/3]) {
+                    i1 = i;
+                } else if (len[i] == tmp[(n-1)*2/3]){
+                    i2 = i;
+                }
+            }
+        }
+        fprintf(outfp, ">%s\n", read_name);
+        int start = 0, end = 0, first = 0;
+        for (i = 0; i < n; ++i) {
+            end += len[i];
+            if (i != i1 && i != i2) {
+                if (first) fprintf(outfp, "%s", sep);
+                for (j = start; j < end; ++j)
+                    fprintf(outfp, "%c", read_seq[j]);
+                first = 1;
+            }
+            start = end;
+        }
+        fprintf(outfp, "\n");
+    }
+    free(len); free(tmp); gzclose(infp); fclose(outfp);
+    return 0;
+}
 
 int fxt_merge_fa(int argc, char *argv[])
 {
@@ -603,6 +728,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "cigar-parse") == 0 || strcmp(argv[1], "cp") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-fa") == 0 || strcmp(argv[1], "mf") == 0) fxt_merge_fa(argc-1, argv+1);
+    else if (strcmp(argv[1], "merge-filter-fa") == 0 || strcmp(argv[1], "mff") == 0) fxt_merge_filter_fa(argc-1, argv+1);
     else if (strcmp(argv[1], "error-parse") == 0 || strcmp(argv[1], "ep") == 0) fxt_error_parse(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
