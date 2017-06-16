@@ -42,14 +42,18 @@ void print_seq(FILE *out, kseq_t *seq)
     if (seq->seq.l == 0) return;
     if (seq->qual.l != 0)
     {
-        fprintf(out, "@%s\n", seq->name.s);
+        fprintf(out, "@%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(out, " %s", seq->comment.s);
+        fprintf(out, "\n");
         fprintf(out, "%s\n", seq->seq.s);
         fprintf(out, "+\n");
         fprintf(out, "%s\n", seq->qual.s);
     }
     else
     {
-        fprintf(out, ">%s\n", seq->name.s);
+        fprintf(out, ">%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(out, " %s", seq->comment.s);
+        fprintf(out, "\n");
         fprintf(out, "%s\n", seq->seq.s);
     }
 }
@@ -225,7 +229,10 @@ int fxt_fq2fa(int argc, char *argv[])
 
     while (kseq_read(seq) >= 0)
     {
-        fprintf(outfp, ">%s\n", seq->name.s);
+        fprintf(outfp, ">%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
+        fprintf(outfp, "\n");
+
         fprintf(outfp, "%s\n", seq->seq.s);
     }
 
@@ -256,7 +263,10 @@ int fxt_fa2fq(int argc, char *argv[])
     int64_t i;
     while (kseq_read(seq) >= 0)
     {
-        fprintf(outfp, "@%s\n", seq->name.s);
+        fprintf(outfp, "@%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
+        fprintf(outfp, "\n");
+
         fprintf(outfp, "%s\n", seq->seq.s);
         fprintf(outfp, "+\n");
         for (i = 0; i < (int64_t)seq->seq.l; ++i) fprintf(outfp, "!");
@@ -305,7 +315,9 @@ int fxt_re_co(int argc, char *argv[])
        seq = read_seq->seq.s;
        for (i = 0; i < len; i++)
            seq_n[i] = nt_table[(int)seq[i]];
-       fprintf(out, ">%s_re-co:\n", read_seq->name.s);
+       fprintf(out, ">%s_re-co:", read_seq->name.s);
+       if (read_seq->comment.l > 0) fprintf(out, " %s", read_seq->comment.s);
+       fprintf(out, "\n");
        for (i = len - 1; i>=0; i--)
        {
            if (seq_n[i] != 4) 
@@ -455,9 +467,9 @@ int comp(const void *a, const void *b) {return (*(int*)a-*(int*)b); }
 
 int fxt_merge_filter_fa(int argc, char *argv[])
 {
-    if (argc != 3 && argc != 4) {
+    if (argc != 2 && argc != 3) {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools merge-fil-fa <in.fa> <2/3> [N] > <out.fa/fq>\n");
+        fprintf(stderr, "Usage: fxtools merge-fil-fa <in.fa> [N] > <out.fa/fq>\n");
         fprintf(stderr, "         optional: use N to separate merged sequences\n");
         fprintf(stderr, "         only work with fasta file.\n"); 
         fprintf(stderr, "\n");
@@ -477,17 +489,18 @@ int fxt_merge_filter_fa(int argc, char *argv[])
     char *read_seq = (char*)calloc(10, 1);
     int w_seq_n=0;
 
-    int med = 0, ter = 0, i, j, i1=-1, i2=-1, n=0;
+    int i, j, i1=-1, i2=-1, n=0;
     int *len=(int*)_err_malloc(100 * sizeof(int)), *tmp=(int*)_err_malloc(100 * sizeof(int));
+    char **name=(char**)_err_malloc(100 * sizeof(char*));
+    for (i = 0; i < 100; i++) name[i] = (char*)_err_malloc(20 * sizeof(char));
     char sep[5]; 
-    if (argc == 4) strcpy(sep, "N");
+    if (argc == 3) strcpy(sep, "N");
     else strcpy(sep, "");
-    if (argv[2][0] == '2') med = 1;
-    else if (argv[2][0] == '3') ter = 1;
     while (kseq_read(seq) >= 0)
     {
         if (strcmp(seq->name.s, read_name) == 0) {
             w_seq_n += seq->seq.l;
+            strcpy(name[n], seq->comment.s);
             len[n++] = seq->seq.l;
             read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
             strcat(read_seq, seq->seq.s);
@@ -495,25 +508,34 @@ int fxt_merge_filter_fa(int argc, char *argv[])
         } else {
             if (w_seq_n > 0) {
                 // cal i1 and i2
+                i1 = -1, i2 = -1;
                 for (i = 0; i < n; ++i) tmp[i] = len[i];
                 qsort(tmp, n, sizeof(int), comp);
-                if (med == 1) {
+                if (n > 1 && n <= 10) {
+                    fprintf(outfp, ">%s r1", read_name);
                     for (i = 0; i < n; ++i) {
                         if (len[i] == tmp[(n-1)/2]) {
                             i1 = i;
+                            fprintf(outfp, " %s", name[i]);
                             break;
                         }
                     }
-                } else {
+                    fprintf(outfp, "\n");
+                } else if (n > 10) {
+                    fprintf(outfp, ">%s r2", read_name);
                     for (i = 0; i < n; ++i) {
                         if (len[i] == tmp[(n-1)/3]) {
                             i1 = i;
+                            fprintf(outfp, " %s", name[i]);
                         } else if (len[i] == tmp[(n-1)*2/3]){
                             i2 = i;
+                            fprintf(outfp, " %s", name[i]);
                         }
                     }
+                    fprintf(outfp, "\n");
+                } else {
+                    fprintf(outfp, ">%s\n", read_name);
                 }
-                fprintf(outfp, ">%s\n", read_name);
                 // filter with i1 and i2
                 int start = 0, end = 0, first = 0;
                 for (i = 0; i < n; ++i) {
@@ -531,6 +553,7 @@ int fxt_merge_filter_fa(int argc, char *argv[])
             }
             n = 0;
             w_seq_n = seq->seq.l;
+            strcpy(name[n], seq->comment.s);
             len[n++] = seq->seq.l;
             strcpy(read_name, seq->name.s);
             read_seq = (char*)realloc(read_seq, w_seq_n+seq->seq.l);
@@ -540,25 +563,34 @@ int fxt_merge_filter_fa(int argc, char *argv[])
     }
     if (w_seq_n > 0) { // last read
         // cal i1 and i2
+        i1 = -1, i2 = -1;
         for (i = 0; i < n; ++i) tmp[i] = len[i];
         qsort(tmp, n, sizeof(int), comp);
-        if (med == 1) {
+        if (n > 1 && n < 10) {
+            fprintf(outfp, ">%s r1", read_name);
             for (i = 0; i < n; ++i) {
                 if (len[i] == tmp[(n-1)/2]) {
                     i1 = i;
+                    fprintf(outfp, " %s", name[i]);
                     break;
                 }
             }
-        } else {
+            fprintf(outfp, "\n");
+        } else if (n > 10){
+            fprintf(outfp, ">%s r2", read_name);
             for (i = 0; i < n; ++i) {
                 if (len[i] == tmp[(n-1)/3]) {
                     i1 = i;
+                    fprintf(outfp, " %s", name[i]);
                 } else if (len[i] == tmp[(n-1)*2/3]){
                     i2 = i;
+                    fprintf(outfp, " %s", name[i]);
                 }
             }
+            fprintf(outfp, "\n");
+        } else {
+            fprintf(outfp, ">%s\n", read_name);
         }
-        fprintf(outfp, ">%s\n", read_name);
         int start = 0, end = 0, first = 0;
         for (i = 0; i < n; ++i) {
             end += len[i];
@@ -572,7 +604,7 @@ int fxt_merge_filter_fa(int argc, char *argv[])
         }
         fprintf(outfp, "\n");
     }
-    free(len); free(tmp); gzclose(infp); fclose(outfp);
+    free(name); free(len); free(tmp); gzclose(infp); fclose(outfp);
     return 0;
 }
 
