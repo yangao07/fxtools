@@ -32,6 +32,8 @@ int usage(void)
     fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in fasta/fastq file.\n");
     fprintf(stderr, "         merge-filter-fa (mff) merge and filter the reads with same read name in fasta file.\n");
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
+    fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
+    fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -332,6 +334,82 @@ int fxt_re_co(int argc, char *argv[])
     kseq_destroy(read_seq);
     fclose(out);
 
+    return 0;
+}
+
+int fxt_dna2rna(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools dna2rna <in.fa/fq> > <out.fa/fq>\n\n");
+        exit(-1);
+    } 
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_dna2rna] Can't open %s.\n", argv[1]);
+        exit(-1);
+    }
+    kseq_t *seq;
+    seq = kseq_init(infp);
+    FILE *outfp = stdout;
+
+    while (kseq_read(seq) >= 0)
+    {
+        fprintf(outfp, ">%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
+        fprintf(outfp, "\n");
+
+        int i;
+        for (i = 0; i < seq->seq.l; ++i) {
+            if (seq->seq.s[i] == 'T') fprintf(outfp, "U");
+            else fprintf(outfp, "%c", seq->seq.s[i]);
+        }
+        fprintf(outfp, "\n");
+    }
+
+    gzclose(infp);
+    fclose(outfp);
+    return 0;
+}
+
+int fxt_rna2dna(int argc, char *argv[])
+{
+    if (argc != 2)
+    {
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools rna2dna <in.fa/fq> > <out.fa/fq>\n\n");
+        exit(-1);
+    } 
+    gzFile infp;
+    if (strcmp(argv[1],"-") == 0 || strcmp(argv[1], "stdin") == 0) infp = gzdopen(fileno(stdin), "r");
+    else infp = gzopen(argv[1], "r");
+    if (infp == NULL)
+    {
+        fprintf(stderr, "[fxt_rna2dna] Can't open %s.\n", argv[1]);
+        exit(-1);
+    }
+    kseq_t *seq;
+    seq = kseq_init(infp);
+    FILE *outfp = stdout;
+
+    while (kseq_read(seq) >= 0)
+    {
+        fprintf(outfp, ">%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
+        fprintf(outfp, "\n");
+
+        int i;
+        for (i = 0; i < seq->seq.l; ++i) {
+            if (seq->seq.s[i] == 'U') fprintf(outfp, "T");
+            else fprintf(outfp, "%c", seq->seq.s[i]);
+        }
+        fprintf(outfp, "\n");
+    }
+
+    gzclose(infp);
+    fclose(outfp);
     return 0;
 }
 
@@ -762,6 +840,8 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "merge-fa") == 0 || strcmp(argv[1], "mf") == 0) fxt_merge_fa(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-filter-fa") == 0 || strcmp(argv[1], "mff") == 0) fxt_merge_filter_fa(argc-1, argv+1);
     else if (strcmp(argv[1], "error-parse") == 0 || strcmp(argv[1], "ep") == 0) fxt_error_parse(argc-1, argv+1);
+    else if (strcmp(argv[1], "dna2rna") == 0 || strcmp(argv[1], "dr") == 0) fxt_dna2rna(argc-1, argv+1);
+    else if (strcmp(argv[1], "rna2dna") == 0 || strcmp(argv[1], "rd") == 0) fxt_rna2dna(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
