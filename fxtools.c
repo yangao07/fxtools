@@ -138,7 +138,7 @@ int fxt_filter_name(int argc, char* argv[])
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools filter-name [-n name] [-m sub-name] <in.fa/fq> > <out.fa/fq>\n");
         fprintf(stderr, "      -n [STR]    only output read with specified name.\n");
-        fprintf(stderr, "      -m [STR]    only output read whose name contain specified string.\n");
+        fprintf(stderr, "      -m [STR]    only output read whose name or comment contain specified string.\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
@@ -158,7 +158,11 @@ int fxt_filter_name(int argc, char* argv[])
         if (n) {
             if (strcmp(seq->name.s, name) != 0) continue;
         } else { // m
-            if (strstr(seq->name.s, sub_name) == NULL) continue;
+            if (seq->comment.l > 0) {
+                if (strstr(seq->name.s, sub_name) == NULL && strstr(seq->comment.s, sub_name) == NULL) continue;
+            } else {
+                if (strstr(seq->name.s, sub_name) == NULL) continue;
+            }
         }
         print_seq(out, seq); 
     }
@@ -776,8 +780,8 @@ int fxt_error_parse(int argc, char *argv[])
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools error-parse <input.bam> > error.out\n\n");
         return 1;
     }
-    fprintf(stdout, "READ_NAME\tREAD_LEN\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
-    long long tol_n=0, unmap=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
+    fprintf(stdout, "READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
+    long long tol_n=0, unmap=0, unmap_flag=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
     int i, seq_len, md, ins, del, mis, match, clip, skip;
 
     samFile *in; bam_hdr_t *h; bam1_t *b;
@@ -787,6 +791,7 @@ int fxt_error_parse(int argc, char *argv[])
 
     while (sam_read1(in, h, b) >= 0) {
         tol_n++;
+        unmap_flag = 0;
         seq_len = b->core.l_qseq;
         md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
         if (!bam_unmap(b)) {
@@ -813,12 +818,15 @@ int fxt_error_parse(int argc, char *argv[])
             md = bam_aux2i(p);
             mis = md - ins - del;
             match = match - mis;
-        } else unmap++;
+        } else {
+            unmap++;
+            unmap_flag = 1;
+        }
         tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
 
-        fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, ins, del, mis, match, clip, skip);
+        fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
     }
-    fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
+    fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
     fprintf(stdout, "Total mapped read: %lld\nTotal unmapped read: %lld\nTotal read: %lld\n", tol_n-unmap, unmap, tol_n);
     return 0;
 }
