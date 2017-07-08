@@ -34,6 +34,7 @@ int usage(void)
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
+    fprintf(stderr, "         peak-seq              extract m6a peak sequence from bam file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -781,8 +782,8 @@ int fxt_error_parse(int argc, char *argv[])
         return 1;
     }
     fprintf(stdout, "READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
-    long long tol_n=0, unmap=0, unmap_flag=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
-    int i, seq_len, md, ins, del, mis, match, clip, skip;
+    long long tol_n=0, unmap=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
+    int i, seq_len, unmap_flag=0, md, ins, del, mis, match, clip, skip;
 
     samFile *in; bam_hdr_t *h; bam1_t *b;
     if ((in = sam_open(argv[optind], "rb")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
@@ -831,6 +832,95 @@ int fxt_error_parse(int argc, char *argv[])
     return 0;
 }
 
+int get_peak_seq(bam1_t *b, int is_rev, int start, int end, int *s, int *e)
+{
+    int n_cigar = b->core.n_cigar; uint32_t *c = bam_get_cigar(b);
+    int len = 0, i, read_len = b->core.l_qseq;
+    int read_i = 1, ref_i = b->core.pos+1;
+    *s = 0, *e = 0;
+    for (i = 0; i < n_cigar; ++i) {
+        int l = bam_cigar_oplen(c[i]);
+        switch (bam_cigar_op(c[i])) {
+            case BAM_CDEL : // D(0 1)
+            case BAM_CREF_SKIP: // N(0 1)
+                ref_i += l;
+                if (*s == 0 && ref_i-1 >= start) {
+                    *s = read_i;
+                }
+                if (*e == 0 && ref_i-1 >= end) {
+                    *e = read_i-1;
+                }
+                break;
+            case BAM_CMATCH: // 1 1
+            case BAM_CEQUAL:
+            case BAM_CDIFF:
+                ref_i += l;
+                read_i += l;
+                if (*s == 0 && ref_i-1 >= start) {
+                    *s = read_i - (ref_i-start);
+                }
+                if (*e == 0 && ref_i-1 >= end) {
+                    *e = read_i - (ref_i-end);
+                }
+                break;
+            case BAM_CINS: // 1 0
+            case BAM_CSOFT_CLIP:
+            case BAM_CHARD_CLIP:
+                read_i += l;
+                break;
+
+            default:
+                err_printf("Error: unknown cigar type: %d.\n", bam_cigar_op(c[i]));
+                break;
+        }
+    }
+    if (is_rev) {
+        int tmp = read_len+1 - *e;
+        *e = read_len+1 - *s;
+        *s = tmp;
+    }
+    len = *e - *s + 1;
+    return len;
+}
+
+//argv[1]: bam
+//argv[2]: peak pos
+int fxt_peak_seq(int argc, char *argv[])
+{
+    if (argc != 3)
+    {
+        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools peak-seq <input.bam> <input.peak> > peak_seq.out\n\n");
+        return 1;
+    }
+    char bamfn[1024], peakfn[1024], reg[1024], rname[1024];
+    samFile *in; hts_idx_t *idx; bam_hdr_t *h; bam1_t *b; FILE *peakfp;
+    strcpy(bamfn, argv[1]); strcpy(peakfn, argv[2]);
+    if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
+    if ((idx = sam_index_load(in, bamfn)) == NULL) err_fatal(__func__, "fail to load the BAM index for \"%s\"\n", bamfn);
+    b = bam_init1();
+
+    if ((peakfp = fopen(peakfn, "r")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", peakfn); 
+
+    int start, end, s, e;
+
+    int r, is_rev; char chr[1024];
+    while (fgets(reg, 1024, peakfp) != NULL) {
+        sscanf(reg, "%s %d %d", chr, &start, &end);
+        sprintf(reg, "%s:%d-%d", chr, start, end);
+        hts_itr_t *itr = sam_itr_querys(idx, h, reg);
+        while ((r = sam_itr_next(in, itr, b)) >= 0) {
+            strcpy(rname, bam_get_qname(b));
+            is_rev = bam_is_rev(b);
+            int len = get_peak_seq(b, is_rev, start, end, &s, &e);
+            if (len >= 30) 
+                fprintf(stdout, "%s\t%c\t%d\t%d\t%d\t%s\t%d\t%d\n", rname, "+-"[is_rev], len, s, e, chr, start, end);
+        }
+    }
+    hts_idx_destroy(idx); bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
+    fclose(peakfp);
+    return 0;
+}
 
 int main(int argc, char*argv[])
 {
@@ -850,6 +940,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "error-parse") == 0 || strcmp(argv[1], "ep") == 0) fxt_error_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "dna2rna") == 0 || strcmp(argv[1], "dr") == 0) fxt_dna2rna(argc-1, argv+1);
     else if (strcmp(argv[1], "rna2dna") == 0 || strcmp(argv[1], "rd") == 0) fxt_rna2dna(argc-1, argv+1);
+    else if (strcmp(argv[1], "peak-seq") == 0 || strcmp(argv[1], "ps") == 0) fxt_peak_seq(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
