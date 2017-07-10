@@ -34,7 +34,7 @@ int usage(void)
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
-    fprintf(stderr, "         peak-seq              extract m6a peak sequence from bam file.\n");
+    fprintf(stderr, "         peak-seq (ps)         extract m6a peak sequence from bam file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -889,7 +889,8 @@ int fxt_peak_seq(int argc, char *argv[])
 {
     if (argc != 3)
     {
-        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools peak-seq <input.bam> <input.peak> > peak_seq.out\n\n");
+        fprintf(stderr, "\n"); 
+        fprintf(stderr, "Usage: fxtools peak-seq [-p] <input.bam> <input.peak> > peak_seq.out\n\n");
         return 1;
     }
     char bamfn[1024], peakfn[1024], reg[1024], rname[1024];
@@ -904,17 +905,27 @@ int fxt_peak_seq(int argc, char *argv[])
 
     int start, end, s, e;
 
-    int r, is_rev; char chr[1024];
+    int r, xs_rev, is_rev; char chr[1024];
     while (fgets(reg, 1024, peakfp) != NULL) {
         sscanf(reg, "%s %d %d", chr, &start, &end);
         sprintf(reg, "%s:%d-%d", chr, start, end);
         hts_itr_t *itr = sam_itr_querys(idx, h, reg);
         while ((r = sam_itr_next(in, itr, b)) >= 0) {
             strcpy(rname, bam_get_qname(b));
+            uint8_t *p;
+            p = bam_aux_get(b, "XS"); // strand orientation for a splice
             is_rev = bam_is_rev(b);
+            if (p == 0) {
+                xs_rev = is_rev;
+            } else {
+                xs_rev = ((bam_aux2A(p) == '+' )? 0 : 1);
+            }
+
+            is_rev = bam_is_rev(b);
+
             int len = get_peak_seq(b, is_rev, start, end, &s, &e);
             if (len >= 30) 
-                fprintf(stdout, "%s\t%c\t%d\t%d\t%d\t%s\t%d\t%d\n", rname, "+-"[is_rev], len, s, e, chr, start, end);
+                fprintf(stdout, "%s\t%c\t%c\t%d\t%d\t%d\t%s\t%d\t%d\n", rname, "+-"[xs_rev], "+-"[is_rev], len, s, e, chr, start, end);
         }
     }
     hts_idx_destroy(idx); bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
