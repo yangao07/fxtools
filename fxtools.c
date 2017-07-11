@@ -980,6 +980,7 @@ int fxt_motif_seq(int argc, char *argv[])
    samFile *in; bam_hdr_t *h; bam1_t *b;
    size_t i;
    int c;
+   strcpy(motif, "GGACT");
    while ((c = getopt(argc, argv, "m:")) >= 0) {
        switch (c) {
            case 'm': strcpy(motif, optarg); break;
@@ -993,7 +994,7 @@ int fxt_motif_seq(int argc, char *argv[])
    if (argc-optind != 2) {
         fprintf(stderr, "\n"); 
         fprintf(stderr, "Usage: fxtools motif-seq <input.bam> [options] > motif_seq.out\n\n");
-        fprintf(stderr, "Options:       -m        motif sequence. [AAGCT]\n");
+        fprintf(stderr, "Options:       -m        motif sequence. [GGACT]\n");
         return 1;
    }
    strcpy(bamfn, argv[optind]);
