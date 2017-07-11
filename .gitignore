@@ -23,6 +23,7 @@
 
 # Executables
 fxtools
+gdb_fxtools
 *.exe
 *.out
 *.app

@@ -35,6 +35,7 @@ int usage(void)
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
     fprintf(stderr, "         peak-seq (ps)         extract m6a peak sequence from bam file.\n");
+    fprintf(stderr, "         motif-seq (ms)        extract m6a motif sequence from bam file.\n");
     //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
     fprintf(stderr, "\n");
     return 1;
@@ -367,7 +368,7 @@ int fxt_dna2rna(int argc, char *argv[])
         if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
         fprintf(outfp, "\n");
 
-        int i;
+        size_t i;
         for (i = 0; i < seq->seq.l; ++i) {
             if (seq->seq.s[i] == 'T') fprintf(outfp, "U");
             else fprintf(outfp, "%c", seq->seq.s[i]);
@@ -405,7 +406,7 @@ int fxt_rna2dna(int argc, char *argv[])
         if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
         fprintf(outfp, "\n");
 
-        int i;
+        size_t i;
         for (i = 0; i < seq->seq.l; ++i) {
             if (seq->seq.s[i] == 'U') fprintf(outfp, "T");
             else fprintf(outfp, "%c", seq->seq.s[i]);
@@ -890,7 +891,7 @@ int fxt_peak_seq(int argc, char *argv[])
     if (argc != 3)
     {
         fprintf(stderr, "\n"); 
-        fprintf(stderr, "Usage: fxtools peak-seq [-p] <input.bam> <input.peak> > peak_seq.out\n\n");
+        fprintf(stderr, "Usage: fxtools peak-seq <input.bam> <input.peak> > peak_seq.out\n\n");
         return 1;
     }
     char bamfn[1024], peakfn[1024], reg[1024], rname[1024];
@@ -933,6 +934,114 @@ int fxt_peak_seq(int argc, char *argv[])
     return 0;
 }
 
+int get_motif_seq(bam1_t *b, bam_hdr_t *h, char *ref, int is_rev, char motif[]) {
+    int ref_s, ref_e, read_s, read_e;
+    // cigar, MD, seq
+    uint8_t *seq = bam_get_seq(b); uint32_t *cigar = bam_get_cigar(b); bam1_core_t c = b->core;
+    int len = strlen(motif);
+    int i, j, k, ref_i, read_i;
+    for (i = 0, read_i = 0, ref_i = c.pos; i < c.n_cigar; ++i) {
+        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        if (op == BAM_CMATCH || op == BAM_CEQUAL) { // ref:1, read:1
+            if (l >= len) {
+                for (j = 0; j <= l-len; ++j) {
+                    if (strncmp(ref+j, motif, len) == 0) {
+                        int unmatch = 0;
+                        for (k = 0; k < len; ++k) {
+                            if ("=ACMGRSVTWYHKDBN"[bam_seqi(seq, read_i+j+k)] != ref[j+k]) {
+                                unmatch = 1;
+                            }
+                        }
+                        if (unmatch == 0) {
+                            ref_s = ref_i+j+1, read_s = read_i+j+1;
+                            ref_e = ref_s+len-1, read_e = read_s+len-1;
+                            fprintf(stdout, "%s\t%c\t%d\t%d\t%d\t%s\t%d\t%d\n", bam_get_qname(b), "+-"[is_rev], len, read_s, read_e, h->target_name[b->core.tid], ref_s, ref_e);
+                        }
+                    }
+                }
+            }
+            read_i += l, ref_i += l;
+        } else if (op == BAM_CDIFF) {
+            read_i += l, ref_i += l;
+        } else if (op == BAM_CDEL || op == BAM_CREF_SKIP) { // ref:1, read:0
+            ref_i += l;
+        } else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) { // ref:0, read:1
+            read_i += l;
+        }
+    }
+    return 0;
+}
+
+//argv[1]: bam
+//argv[2]: ref.fa
+int fxt_motif_seq(int argc, char *argv[])
+{
+   char bamfn[1024], motif[10], rc_motif[10], rname[1024];
+   samFile *in; bam_hdr_t *h; bam1_t *b;
+   size_t i;
+   int c;
+   while ((c = getopt(argc, argv, "m:")) >= 0) {
+       switch (c) {
+           case 'm': strcpy(motif, optarg); break;
+           default: err_printf("Unknown option: '-%c'\n\n", c); break;
+       }
+   }
+   for (i = 0; i < strlen(motif); ++i) {
+       rc_motif[strlen(motif)-1-i] = nt_char[3-nt_table[(int)motif[i]]];
+   }
+
+   if (argc-optind != 2) {
+        fprintf(stderr, "\n"); 
+        fprintf(stderr, "Usage: fxtools motif-seq <input.bam> [options] > motif_seq.out\n\n");
+        fprintf(stderr, "Options:       -m        motif sequence. [AAGCT]\n");
+        return 1;
+   }
+   strcpy(bamfn, argv[optind]);
+   if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
+   if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
+   b = bam_init1();
+   faidx_t *fai = fai_load(argv[optind+1]);
+   if ( !fai ) {
+       fprintf(stderr, "Could not load fai index of %s\n", argv[2]);
+       fprintf(stderr, "Building fai index of %s\n", argv[2]);
+       if (fai_build(argv[1]) != 0) {
+           fprintf(stderr, "Could not build fai index %s.fai\n", argv[2]);
+           return EXIT_FAILURE;
+       }
+   }
+   
+   int r, xs_rev, is_rev;
+   while ((r = sam_read1(in, h, b)) >= 0) {
+       strcpy(rname, bam_get_qname(b));
+       uint8_t *p;
+       p = bam_aux_get(b, "XS"); // strand orientation for a splice
+       is_rev = bam_is_rev(b);
+       if (p == 0) {
+           xs_rev = is_rev;
+       } else {
+           xs_rev = ((bam_aux2A(p) == '+' )? 0 : 1);
+       }
+
+       is_rev = bam_is_rev(b);
+
+       // fetch ref sequence
+       char reg[1024];
+       sprintf(reg, "%s:%d-%d", h->target_name[b->core.tid], b->core.pos+1, b->core.pos+bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)));
+       int seq_len;
+       char *seq = fai_fetch(fai, reg, &seq_len);
+       if ( seq_len < 0 ) {
+           err_printf("Failed to fetch sequence in %s\n", reg);
+           return 0;
+       }
+       int len;
+       len = is_rev ? get_motif_seq(b, h, seq, is_rev, rc_motif) : get_motif_seq(b, h, seq, is_rev, motif);
+       free(seq);
+   }
+   fai_destroy(fai);
+   bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
+   return 0;
+}
+
 int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
@@ -952,6 +1061,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "dna2rna") == 0 || strcmp(argv[1], "dr") == 0) fxt_dna2rna(argc-1, argv+1);
     else if (strcmp(argv[1], "rna2dna") == 0 || strcmp(argv[1], "rd") == 0) fxt_rna2dna(argc-1, argv+1);
     else if (strcmp(argv[1], "peak-seq") == 0 || strcmp(argv[1], "ps") == 0) fxt_peak_seq(argc-1, argv+1);
+    else if (strcmp(argv[1], "motif-seq") == 0 || strcmp(argv[1], "ms") == 0) fxt_motif_seq(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
