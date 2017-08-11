@@ -25,6 +25,7 @@ int usage(void)
     fprintf(stderr, "         filter-bam-name (fbn) filter bam/sam records with specified read name.\n");
     fprintf(stderr, "         fq2fa (qa)            convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq (aq)            convert FASTA format data to FASTQ format data.\n");
+    fprintf(stderr, "         bam2bed (bb)          convert BAM file to BED file. seperated exon regions for spliced BAM\n");
     fprintf(stderr, "         re-co (rc)            convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
     fprintf(stderr, "         seq-display (sd)      display a specified region of FASTA/FASTQ file.\n");
     fprintf(stderr, "         cigar-parse (cp)      parse the given cigar(stdout).\n");
@@ -60,6 +61,16 @@ void print_seq(FILE *out, kseq_t *seq)
         fprintf(out, "\n");
         fprintf(out, "%s\n", seq->seq.s);
     }
+}
+
+int _bam_cigar2qlen(int n_cigar, uint32_t *cigar) {
+    int i, len = 0;
+    for (i = 0; i < n_cigar; ++i) {
+        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        if (op != BAM_CDEL && op != BAM_CREF_SKIP)
+            len += l;
+    }
+    return len;
 }
 
 int fxt_filter(int argc, char* argv[])
@@ -116,7 +127,7 @@ int fxt_filter_bam(int argc, char *argv[])
     if (sam_hdr_write(out, h) != 0) err_fatal_simple("Error in writing SAM header\n"); //sam header
 
     while (sam_read1(in, h, b) >= 0) {
-        seq_len = b->core.l_qseq;
+        seq_len = _bam_cigar2qlen(b->core.n_cigar, bam_get_cigar(b));
         if ((low != -1 && (int64_t)seq_len < low) || (upper != -1 && (int64_t)seq_len > upper))
             continue;
         if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
@@ -794,7 +805,6 @@ int fxt_error_parse(int argc, char *argv[])
     while (sam_read1(in, h, b) >= 0) {
         tol_n++;
         unmap_flag = 0;
-        seq_len = b->core.l_qseq;
         md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
         if (!bam_unmap(b)) {
             uint32_t *cigar = bam_get_cigar(b); int cigar_len = b->core.n_cigar;
@@ -811,6 +821,7 @@ int fxt_error_parse(int argc, char *argv[])
                     default : err_fatal_simple("Cigar ERROR.\n");
                 }
             }
+            seq_len = _bam_cigar2qlen(cigar_len, cigar);
             uint8_t *p = bam_aux_get(b, "NM");
             if (p == 0) p = bam_aux_get(b, "nM");
             if (p == 0) {
@@ -823,80 +834,120 @@ int fxt_error_parse(int argc, char *argv[])
         } else {
             unmap++;
             unmap_flag = 1;
+            seq_len = b->core.l_qseq;
         }
         tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
 
         fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
     }
     fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
-    fprintf(stdout, "Total mapped read: %lld\nTotal unmapped read: %lld\nTotal read: %lld\n", tol_n-unmap, unmap, tol_n);
+    fprintf(stdout, "Total mapped read: %lld\nTotal unmapped read: %lld\nTotal read: %lld\nError rate: %f\n", tol_n-unmap, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_del+tol_mis));
     return 0;
 }
 
-int get_peak_seq(bam1_t *b, int is_rev, int start, int end, int *s, int *e)
-{
-    int n_cigar = b->core.n_cigar; uint32_t *c = bam_get_cigar(b);
-    int len = 0, i, read_len = b->core.l_qseq;
-    int read_i = 1, ref_i = b->core.pos+1;
-    *s = 0, *e = 0;
+int get_read_pos(int pos, uint32_t *cigar, int n_cigar, int ref_pos/*1-based*/, int read_pos) {
+    int i;
     for (i = 0; i < n_cigar; ++i) {
-        int l = bam_cigar_oplen(c[i]);
-        switch (bam_cigar_op(c[i])) {
-            case BAM_CDEL : // D(0 1)
-            case BAM_CREF_SKIP: // N(0 1)
-                ref_i += l;
-                if (*s == 0 && ref_i-1 >= start) {
-                    *s = read_i;
-                }
-                if (*e == 0 && ref_i-1 >= end) {
-                    *e = read_i-1;
-                }
-                break;
-            case BAM_CMATCH: // 1 1
-            case BAM_CEQUAL:
-            case BAM_CDIFF:
-                ref_i += l;
-                read_i += l;
-                if (*s == 0 && ref_i-1 >= start) {
-                    *s = read_i - (ref_i-start);
-                }
-                if (*e == 0 && ref_i-1 >= end) {
-                    *e = read_i - (ref_i-end);
-                }
-                break;
-            case BAM_CINS: // 1 0
-            case BAM_CSOFT_CLIP:
-            case BAM_CHARD_CLIP:
-                read_i += l;
-                break;
-
-            default:
-                err_printf("Error: unknown cigar type: %d.\n", bam_cigar_op(c[i]));
-                break;
+        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        if (op == BAM_CREF_SKIP || op == BAM_CDEL) {
+            if (ref_pos + l > pos) {
+                return read_pos;
+            }
+            ref_pos += l;
+        } else if (op == BAM_CMATCH || op == BAM_CDIFF || op == BAM_CEQUAL) { // ref:1, read:1
+            if (ref_pos + l > pos) {
+                return read_pos + (pos-ref_pos);
+            }
+            read_pos += l, ref_pos += l;
+        } else if (op == BAM_CINS || op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP) { // ref:0, read:1
+            read_pos += l;
         }
     }
-    if (is_rev) {
-        int tmp = read_len+1 - *e;
-        *e = read_len+1 - *s;
-        *s = tmp;
+    return read_pos;
+}
+
+int get_peak_seq(bam1_t *b, int is_rev, int motif_s, int motif_e, int bin_size, int *_ref_s, int *_ref_e, int *_read_s, int *_read_e)
+{
+    int n_cigar = b->core.n_cigar; uint32_t *cigar = bam_get_cigar(b);
+    int tmp_e, read_s = 1, read_e = 0, ref_s = b->core.pos+1, ref_e = ref_s -1;
+    int len = 0, hit = 0, i, j, last_cigar_i = 0, qlen = _bam_cigar2qlen(n_cigar, cigar);
+
+    for (i = 0; i < n_cigar; ++i) {
+        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        if (op == BAM_CREF_SKIP) {
+            // check if current exon contains the motif
+            if (ref_s <= motif_s && ref_e >= motif_e) {
+                // cal _ref_s, _ref_e, _read_s, _read_e
+                if (ref_s <= motif_s - bin_size/2) *_ref_s = motif_s - bin_size/2;
+                else *_ref_s = ref_s;
+                if (ref_e >= motif_e + bin_size/2) *_ref_e = motif_e + bin_size/2;
+                else *_ref_e = ref_e;
+
+                *_read_s = get_read_pos(*_ref_s, cigar+last_cigar_i, n_cigar-last_cigar_i, ref_s, read_s);
+                *_read_e = get_read_pos(*_ref_e, cigar+last_cigar_i, n_cigar-last_cigar_i, ref_s, read_s);
+
+                if (is_rev) {
+                    tmp_e = *_read_e;
+                    *_read_e = qlen + 1 - *_read_s;
+                    *_read_s = qlen + 1 - tmp_e;
+                }
+                len = *_read_e - *_read_s + 1;
+                hit = 1;
+                break;
+            }
+            ref_s = ref_e + l + 1;
+            ref_e += l;
+            read_s = read_e + 1;
+            last_cigar_i = i+1;
+        } else if (op == BAM_CMATCH || op == BAM_CDIFF || op == BAM_CEQUAL) { // ref:1, read:1
+            read_e += l, ref_e += l;
+        } else if (op == BAM_CDEL) { // ref:1, read:0
+            ref_e += l;
+        } else if (op == BAM_CINS) { // ref:0, read:1
+            read_e += l;
+        } else if ((op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP) && i == 0) {
+            read_s += l;
+            read_e += l;
+            last_cigar_i = i+1;
+        }
     }
-    len = *e - *s + 1;
+    if (hit == 0) {
+        if (ref_s <= motif_s && ref_e >= motif_e) {
+            // cal _ref_s, _ref_e, _read_s, _read_e
+            if (ref_s <= motif_s - bin_size/2) *_ref_s = motif_s - bin_size/2;
+            else *_ref_s = ref_s;
+            if (ref_e >= motif_e + bin_size/2) *_ref_e = motif_e + bin_size/2;
+            else *_ref_e = ref_e;
+
+            *_read_s = get_read_pos(*_ref_s, cigar+last_cigar_i, n_cigar-last_cigar_i, ref_s, read_s);
+            *_read_e = get_read_pos(*_ref_e, cigar+last_cigar_i, n_cigar-last_cigar_i, ref_s, read_s);
+
+            if (is_rev) {
+                tmp_e = *_read_e;
+                *_read_e = qlen + 1 - *_read_s;
+                *_read_s = qlen + 1 - tmp_e;
+            }
+            len = *_read_e - *_read_s + 1;
+        }
+    }
+
     return len;
 }
 
 //argv[1]: bam
 //argv[2]: peak pos
+//argv[3]: bin size
 int fxt_peak_seq(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 4)
     {
         fprintf(stderr, "\n"); 
-        fprintf(stderr, "Usage: fxtools peak-seq <input.bam> <input.peak> > peak_seq.out\n\n");
+        fprintf(stderr, "Usage: fxtools peak-seq <input.bam> <input.peak.bed> <up/down bin-size> > peak_seq.out\n\n");
         return 1;
     }
-    char bamfn[1024], peakfn[1024], reg[1024], rname[1024];
+    char bamfn[1024], peakfn[1024], reg[1024], rname[1024]; int bin_size = atoi(argv[3]);
     samFile *in; hts_idx_t *idx; bam_hdr_t *h; bam1_t *b; FILE *peakfp;
-    strcpy(bamfn, argv[1]); strcpy(peakfn, argv[2]);
+    strcpy(bamfn, argv[1]); strcpy(peakfn, argv[2]); 
     if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
     if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
     if ((idx = sam_index_load(in, bamfn)) == NULL) err_fatal(__func__, "fail to load the BAM index for \"%s\"\n", bamfn);
@@ -904,29 +955,22 @@ int fxt_peak_seq(int argc, char *argv[])
 
     if ((peakfp = fopen(peakfn, "r")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", peakfn); 
 
-    int start, end, s, e;
+    int motif_s, motif_e, ref_s, ref_e, read_s, read_e; char strand;
 
-    int r, xs_rev, is_rev; char chr[1024];
+    int r, is_rev; char chr[1024];
     while (fgets(reg, 1024, peakfp) != NULL) {
-        sscanf(reg, "%s %d %d", chr, &start, &end);
-        sprintf(reg, "%s:%d-%d", chr, start, end);
+        sscanf(reg, "%s %d %d %*s %*d %c", chr, &motif_s, &motif_e, &strand);
+        sprintf(reg, "%s:%d-%d", chr, motif_s, motif_e);
         hts_itr_t *itr = sam_itr_querys(idx, h, reg);
         while ((r = sam_itr_next(in, itr, b)) >= 0) {
+            if (b->core.flag & BAM_FUNMAP) continue;
             strcpy(rname, bam_get_qname(b));
-            uint8_t *p;
-            p = bam_aux_get(b, "XS"); // strand orientation for a splice
             is_rev = bam_is_rev(b);
-            if (p == 0) {
-                xs_rev = is_rev;
-            } else {
-                xs_rev = ((bam_aux2A(p) == '+' )? 0 : 1);
-            }
+            if (strand != "+-"[is_rev]) continue;
 
-            is_rev = bam_is_rev(b);
-
-            int len = get_peak_seq(b, is_rev, start, end, &s, &e);
-            if (len >= 30) 
-                fprintf(stdout, "%s\t%c\t%c\t%d\t%d\t%d\t%s\t%d\t%d\n", rname, "+-"[xs_rev], "+-"[is_rev], len, s, e, chr, start, end);
+            int len = get_peak_seq(b, is_rev, motif_s, motif_e, bin_size, &ref_s, &ref_e, &read_s, &read_e);
+            if (len > 0)
+                fprintf(stdout, "%s\t%d\t%d\t%s\t%d\t%c\t%d\t%d\t%d\t%d\n", chr, ref_s, ref_e, rname, 0, "+-"[is_rev], motif_s, motif_e, read_s, read_e);
         }
     }
     hts_idx_destroy(idx); bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
@@ -939,22 +983,30 @@ int get_motif_seq(bam1_t *b, bam_hdr_t *h, char *ref, int is_rev, char motif[]) 
     // cigar, MD, seq
     uint8_t *seq = bam_get_seq(b); uint32_t *cigar = bam_get_cigar(b); bam1_core_t c = b->core;
     int len = strlen(motif);
-    int i, j, k, ref_i, read_i;
+    int i, j, k, ref_i, read_i, qlen = _bam_cigar2qlen(c.n_cigar, cigar);
+
     for (i = 0, read_i = 0, ref_i = c.pos; i < c.n_cigar; ++i) {
-        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        int l = cigar[i]>>4, op=cigar[i]&0xf, read_shift = 0;
         if (op == BAM_CMATCH || op == BAM_CEQUAL) { // ref:1, read:1
             if (l >= len) {
                 for (j = 0; j <= l-len; ++j) {
-                    if (strncmp(ref+j, motif, len) == 0) {
+                    if (strncmp(ref+ref_i-c.pos+j, motif, len) == 0) {
                         int unmatch = 0;
                         for (k = 0; k < len; ++k) {
-                            if ("=ACMGRSVTWYHKDBN"[bam_seqi(seq, read_i+j+k)] != ref[j+k]) {
+                            if ("=ACMGRSVTWYHKDBN"[bam_seqi(seq, read_i+j+k)] != ref[ref_i-c.pos+j+k]) {
                                 unmatch = 1;
+                                break;
                             }
                         }
                         if (unmatch == 0) {
-                            ref_s = ref_i+j+1, read_s = read_i+j+1;
-                            ref_e = ref_s+len-1, read_e = read_s+len-1;
+                            if (is_rev) {
+                                read_e = qlen + 1 - (read_i+read_shift+j+1); 
+                                read_s = read_e - len + 1;
+                            } else {
+                                read_s = read_shift+read_i+j+1, read_e = read_s+len-1;
+                            }
+                            ref_s = ref_i+j+1;
+                            ref_e = ref_s+len-1;
                             fprintf(stdout, "%s\t%c\t%d\t%d\t%d\t%s\t%d\t%d\n", bam_get_qname(b), "+-"[is_rev], len, read_s, read_e, h->target_name[b->core.tid], ref_s, ref_e);
                         }
                     }
@@ -967,6 +1019,8 @@ int get_motif_seq(bam1_t *b, bam_hdr_t *h, char *ref, int is_rev, char motif[]) 
             ref_i += l;
         } else if (op == BAM_CINS || op == BAM_CSOFT_CLIP) { // ref:0, read:1
             read_i += l;
+        } else if (op == BAM_CHARD_CLIP) {
+            read_shift += l;
         }
     }
     return 0;
@@ -976,71 +1030,125 @@ int get_motif_seq(bam1_t *b, bam_hdr_t *h, char *ref, int is_rev, char motif[]) 
 //argv[2]: ref.fa
 int fxt_motif_seq(int argc, char *argv[])
 {
-   char bamfn[1024], motif[10], rc_motif[10], rname[1024];
-   samFile *in; bam_hdr_t *h; bam1_t *b;
-   size_t i;
-   int c;
-   strcpy(motif, "GGACT");
-   while ((c = getopt(argc, argv, "m:")) >= 0) {
-       switch (c) {
-           case 'm': strcpy(motif, optarg); break;
-           default: err_printf("Unknown option: '-%c'\n\n", c); break;
-       }
-   }
-   for (i = 0; i < strlen(motif); ++i) {
-       rc_motif[strlen(motif)-1-i] = nt_char[3-nt_table[(int)motif[i]]];
-   }
+    char bamfn[1024], motif[10], rname[1024];
+    samFile *in; bam_hdr_t *h; bam1_t *b;
+    size_t i;
+    int c;
+    strcpy(motif, "GGACT");
+    while ((c = getopt(argc, argv, "m:")) >= 0) {
+        switch (c) {
+            case 'm': strcpy(motif, optarg); break;
+            default: err_printf("Unknown option: '-%c'\n\n", c); break;
+        }
+    }
 
-   if (argc-optind != 2) {
+    if (argc-optind != 2) {
         fprintf(stderr, "\n"); 
         fprintf(stderr, "Usage: fxtools motif-seq <input.bam> [options] > motif_seq.out\n\n");
         fprintf(stderr, "Options:       -m        motif sequence. [GGACT]\n");
         return 1;
-   }
-   strcpy(bamfn, argv[optind]);
-   if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
-   if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
-   b = bam_init1();
-   faidx_t *fai = fai_load(argv[optind+1]);
-   if ( !fai ) {
-       fprintf(stderr, "Could not load fai index of %s\n", argv[2]);
-       fprintf(stderr, "Building fai index of %s\n", argv[2]);
-       if (fai_build(argv[1]) != 0) {
-           fprintf(stderr, "Could not build fai index %s.fai\n", argv[2]);
-           return EXIT_FAILURE;
-       }
-   }
-   
-   int r, xs_rev, is_rev;
-   while ((r = sam_read1(in, h, b)) >= 0) {
-       strcpy(rname, bam_get_qname(b));
-       uint8_t *p;
-       p = bam_aux_get(b, "XS"); // strand orientation for a splice
-       is_rev = bam_is_rev(b);
-       if (p == 0) {
-           xs_rev = is_rev;
-       } else {
-           xs_rev = ((bam_aux2A(p) == '+' )? 0 : 1);
-       }
+    }
+    strcpy(bamfn, argv[optind]);
+    if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
+    b = bam_init1();
+    faidx_t *fai = fai_load(argv[optind+1]);
+    if ( !fai ) {
+        fprintf(stderr, "Could not load fai index of %s\n", argv[2]);
+        fprintf(stderr, "Building fai index of %s\n", argv[2]);
+        if (fai_build(argv[1]) != 0) {
+            fprintf(stderr, "Could not build fai index %s.fai\n", argv[2]);
+            return EXIT_FAILURE;
+        }
+    }
 
-       is_rev = bam_is_rev(b);
+    int r, is_rev;
+    while ((r = sam_read1(in, h, b)) >= 0) {
+        if (b->core.flag & BAM_FUNMAP) continue;
 
-       // fetch ref sequence
-       char reg[1024];
-       sprintf(reg, "%s:%d-%d", h->target_name[b->core.tid], b->core.pos+1, b->core.pos+bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)));
-       int seq_len;
-       char *seq = fai_fetch(fai, reg, &seq_len);
-       if ( seq_len < 0 ) {
-           err_printf("Failed to fetch sequence in %s\n", reg);
-           return 0;
-       }
-       int len;
-       len = is_rev ? get_motif_seq(b, h, seq, is_rev, rc_motif) : get_motif_seq(b, h, seq, is_rev, motif);
-       free(seq);
-   }
-   fai_destroy(fai);
-   bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
-   return 0;
+        strcpy(rname, bam_get_qname(b));
+        is_rev = bam_is_rev(b);
+
+        // fetch ref sequence
+        char reg[1024];
+        sprintf(reg, "%s:%d-%d", h->target_name[b->core.tid], b->core.pos+1, b->core.pos+bam_cigar2rlen(b->core.n_cigar, bam_get_cigar(b)));
+        int seq_len;
+        char *seq = fai_fetch(fai, reg, &seq_len);
+        if (seq_len < 0 ) {
+            err_printf("Failed to fetch sequence in %s\n", reg);
+            return 0;
+        }
+        int len = get_motif_seq(b, h, seq, is_rev, motif);
+        free(seq);
+    }
+    fai_destroy(fai);
+    bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
+    return 0;
+}
+
+int bam2bed_core(bam1_t *b, bam_hdr_t *h) {
+    int n_cigar = b->core.n_cigar; uint32_t *cigar = bam_get_cigar(b);
+    int is_rev = bam_is_rev(b);
+    int i, read_s=1, read_e = 0, ref_s = b->core.pos+1, ref_e = ref_s - 1, tmp_s, tmp_e;
+    int qlen = _bam_cigar2qlen(n_cigar, cigar);
+    for (i = 0; i < n_cigar; ++i) {
+        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        if (op == BAM_CREF_SKIP) {
+            if (is_rev) {
+                tmp_e = qlen + 1 - read_s;
+                tmp_s = qlen + 1 - read_e;
+            } else {
+                tmp_s = read_s;
+                tmp_e = read_e;
+            }
+            fprintf(stdout, "%s\t%d\t%d\t%s\t%d\t%c\t%d\t%d\n", h->target_name[b->core.tid], ref_s, ref_e, bam_get_qname(b), 0, "+-"[is_rev], tmp_s, tmp_e);
+            ref_s = ref_e + l + 1;
+            ref_e += l;
+            read_s = read_e + 1;
+        } else if (op == BAM_CMATCH || op == BAM_CDIFF || op == BAM_CEQUAL) { // ref:1, read:1
+            read_e += l, ref_e += l;
+        } else if (op == BAM_CDEL) { // ref:1, read:0
+            ref_e += l;
+        } else if (op == BAM_CINS) { // ref:0, read:1
+            read_e += l;
+        } else if (op == BAM_CSOFT_CLIP) { // ref: 0, read: 1
+            if (i == 0) {
+                read_s += l;
+                read_e += l;
+            }
+        }
+    }
+    if (is_rev) {
+        tmp_e = qlen + 1 - read_s;
+        tmp_s = qlen + 1 - read_e;
+    } else {
+        tmp_s = read_s;
+        tmp_e = read_e;
+    }
+    fprintf(stdout, "%s\t%d\t%d\t%s\t%d\t%c\t%d\t%d\n", h->target_name[b->core.tid], ref_s, ref_e, bam_get_qname(b), 0, "+-"[is_rev], tmp_s, tmp_e);
+
+    return 0;
+}
+
+int fxt_bam2bed(int argc, char *argv[]) {
+    if (argc != 2) {
+        err_printf("Usage: fxtools bam2bed in.bam > out.bed\n");
+        err_printf("\n");
+        return 0;
+    }
+    char bamfn[1024];
+    strcpy(bamfn, argv[1]);
+    samFile *in; bam_hdr_t *h; bam1_t *b;
+    if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
+    b = bam_init1();
+    int r;
+    while ((r = sam_read1(in, h, b)) >= 0) {
+        if (b->core.flag & BAM_FUNMAP) continue;
+        bam2bed_core(b, h);
+    }
+    bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
+    return 0;
 }
 
 int main(int argc, char*argv[])
@@ -1053,6 +1161,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "fq2fa") == 0 || strcmp(argv[1], "qa") == 0) fxt_fq2fa(argc-1, argv+1);
     else if (strcmp(argv[1], "fa2fq") == 0 || strcmp(argv[1], "aq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0 || strcmp(argv[1], "rc") == 0) fxt_re_co(argc-1, argv+1);
+    else if (strcmp(argv[1], "bam2bed") == 0 || strcmp(argv[1], "bb") == 0) fxt_bam2bed(argc-1, argv+1);
     else if (strcmp(argv[1], "seq-display") == 0 || strcmp(argv[1], "sd") == 0) fxt_seq_dis(argc-1, argv+1);
     else if (strcmp(argv[1], "cigar-parse") == 0 || strcmp(argv[1], "cp") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
