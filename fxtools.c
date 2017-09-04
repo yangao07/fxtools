@@ -870,7 +870,7 @@ int get_peak_seq(bam1_t *b, int is_rev, int motif_s, int motif_e, int bin_size, 
 {
     int n_cigar = b->core.n_cigar; uint32_t *cigar = bam_get_cigar(b);
     int tmp_e, read_s = 1, read_e = 0, ref_s = b->core.pos+1, ref_e = ref_s -1;
-    int len = 0, hit = 0, i, j, last_cigar_i = 0, qlen = _bam_cigar2qlen(n_cigar, cigar);
+    int len = 0, hit = 0, i, last_cigar_i = 0, qlen = _bam_cigar2qlen(n_cigar, cigar);
 
     for (i = 0; i < n_cigar; ++i) {
         int l = cigar[i]>>4, op=cigar[i]&0xf;
@@ -1032,7 +1032,6 @@ int fxt_motif_seq(int argc, char *argv[])
 {
     char bamfn[1024], motif[10], rname[1024];
     samFile *in; bam_hdr_t *h; bam1_t *b;
-    size_t i;
     int c;
     strcpy(motif, "GGACT");
     while ((c = getopt(argc, argv, "m:")) >= 0) {
@@ -1078,11 +1077,10 @@ int fxt_motif_seq(int argc, char *argv[])
             err_printf("Failed to fetch sequence in %s\n", reg);
             return 0;
         }
-        int len = get_motif_seq(b, h, seq, is_rev, motif);
+        get_motif_seq(b, h, seq, is_rev, motif);
         free(seq);
     }
-    fai_destroy(fai);
-    bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
+    fai_destroy(fai); bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
     return 0;
 }
 
