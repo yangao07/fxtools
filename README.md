@@ -5,9 +5,9 @@ Program: fxtools (light-weight processing tool for FASTA, FASTQ and BAM format d
 Usage:   fxtools <command> [options]
 
 Command: 
-         filter (fl)           filter fa/fq sequences with specified length bound.
+         filter (fl)           filter fa/fq sequences with specified length boundary.
          filter-name (fn)      filter fa/fq sequences with specified name.
-         filter-bam (fb)       filter bam/sam records with specified read length bound.
+         filter-bam (fb)       filter bam/sam records with specified read length boundary.
          filter-bam-name (fbn) filter bam/sam records with specified read name.
          fq2fa (qa)            convert FASTQ format data to FASTA format data.
          fa2fq (aq)            convert FASTA format data to FASTQ format data.

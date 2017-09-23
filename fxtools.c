@@ -16,12 +16,12 @@ KSEQ_INIT(gzFile, gzread)
 
 int usage(void)
 {
-    fprintf(stderr, "Program: fxtools (fasta and fastq data tools)\n");
+    fprintf(stderr, "Program: fxtools (light-weight processing tool for FASTA, FASTQ and BAM format data)\n");
     fprintf(stderr, "Usage:   fxtools <command> [options]\n\n");
     fprintf(stderr, "Command: \n");
-    fprintf(stderr, "         filter (fl)           filter fa/fq sequences with specified length bound.\n");
+    fprintf(stderr, "         filter (fl)           filter fa/fq sequences with specified length boundary.\n");
     fprintf(stderr, "         filter-name (fn)      filter fa/fq sequences with specified name.\n");
-    fprintf(stderr, "         filter-bam (fb)       filter bam/sam records with specified read length bound.\n");
+    fprintf(stderr, "         filter-bam (fb)       filter bam/sam records with specified read length boundary.\n");
     fprintf(stderr, "         filter-bam-name (fbn) filter bam/sam records with specified read name.\n");
     fprintf(stderr, "         fq2fa (qa)            convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq (aq)            convert FASTA format data to FASTQ format data.\n");
@@ -35,9 +35,8 @@ int usage(void)
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
-    fprintf(stderr, "         peak-seq (ps)         extract m6a peak sequence from bam file.\n");
-    fprintf(stderr, "         motif-seq (ms)        extract m6a motif sequence from bam file.\n");
-    //fprintf(stderr, "      ./fa_filter in.fa out.fa low-bound upper-bound(-1 for no bound)\n");
+    //fprintf(stderr, "         peak-seq (ps)         extract m6a peak sequence from bam file.\n");
+    //fprintf(stderr, "         motif-seq (ms)        extract m6a motif sequence from bam file.\n");
     fprintf(stderr, "\n");
     return 1;
 }
