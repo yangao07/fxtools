@@ -1,5 +1,13 @@
-fxtools
-=======
+# fxtools
+light-weight processing tool for FASTA, FASTQ and BAM format data
+
+## Installation
+```
+git clone https://github.com/yangao07/fxtools.git --recursive
+cd fxtools; make
+```
+
+## Commands and options
  ```
 Program: fxtools (light-weight processing tool for FASTA, FASTQ and BAM format data)
 Usage:   fxtools <command> [options]
