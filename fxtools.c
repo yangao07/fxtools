@@ -891,8 +891,9 @@ int fxt_trim(int argc, char *argv[]) {
                 if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u')
                     T_n++;
             }
-            if (T_n / (win_size + 0.0) >= min_frac && (seq->seq.s[j-1] == 'T' || seq->seq.s[j-1] == 'U' || seq->seq.s[j-1] == 't' || seq->seq.s[j-1] == 'u')) {
-                trim_s = i + win_size;
+            if (T_n / (win_size + 0.0) >= min_frac) {
+                if (seq->seq.s[j-1] == 'T' || seq->seq.s[j-1] == 'U' || seq->seq.s[j-1] == 't' || seq->seq.s[j-1] == 'u')
+                    trim_s = i + win_size;
             } else break;
         }
         if (trim_s < min_len) trim_s = 0;
@@ -903,8 +904,9 @@ int fxt_trim(int argc, char *argv[]) {
                     if (seq->seq.s[j] == 'A' || seq->seq.s[j] == 'a')
                         A_n++;
                 }
-                if (A_n / (win_size + 0.0) >= min_frac && (seq->seq.s[j+1]=='A' || seq->seq.s[j+1]=='a')) {
-                    trim_e = i - win_size;
+                if (A_n / (win_size + 0.0) >= min_frac) {
+                    if (seq->seq.s[j+1]=='A' || seq->seq.s[j+1]=='a')
+                        trim_e = i - win_size;
                 } else break;
             }
             if (seq->seq.l-1 - trim_e < min_len) trim_e = seq->seq.l-1;

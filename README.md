@@ -29,4 +29,5 @@ Command:
          error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.
          dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.
          rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.
+         trim (tr)             trim poly A tail(poly T head).
 ```
