@@ -32,10 +32,12 @@ int usage(void)
     fprintf(stderr, "         length-parse (lp)     parse the length of sequences in fa/fq file.\n");
     fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in fasta/fastq file.\n");
     fprintf(stderr, "         merge-filter-fa (mff) merge and filter the reads with same read name in fasta file.\n");
+    fprintf(stderr, "         duplicate-fa (df)     duplicate the read sequence with specific copy number.\n");
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
-    fprintf(stderr, "         trim (tr)            trim poly A tail(poly T head).\n");
+    fprintf(stderr, "         trim (tr)             trim poly A tail(poly T head).\n");
+    fprintf(stderr, "         trimF (tf)            trim and filter with poly A tail(poly T head). Only poly A contained reads will be kept.\n");
     fprintf(stderr, "\n");
     return 1;
 }
@@ -719,6 +721,47 @@ int fxt_merge_fa(int argc, char *argv[])
     return 0;
 }
 
+int fxt_duplicate_fa(int argc, char *argv[])
+{
+    if (argc != 3) {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools duplicate-fa <in.fa/fq> <copy_number> > out.fa/fq\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+    gzFile infp = xzopen(argv[1], "r"); float copy_n = atof(argv[2]);
+    kseq_t *seq = kseq_init(infp);
+    FILE *outfp = stdout;
+    size_t i;
+
+    while (kseq_read(seq) >= 0)
+    {
+        if (seq->qual.l > 0) { // fastq
+            fprintf(outfp, "@%s_copy:%f", seq->name.s, copy_n);
+            if (seq->comment.l > 0) fprintf(outfp, " %s\n", seq->comment.s);
+            else fprintf(outfp, "\n");
+            for (i = 0; i < seq->seq.l * copy_n; ++i) {
+                fprintf(outfp, "%c", seq->seq.s[i % seq->seq.l]);
+            } fprintf(outfp, "\n");
+            fprintf(outfp, "+\n");
+            for (i = 0; i < seq->qual.l * copy_n; ++i) {
+                fprintf(outfp, "%c", seq->qual.s[i % seq->qual.l]);
+            } fprintf(outfp, "\n");
+        } else { // fasta
+            fprintf(outfp, ">%s_copy:%f", seq->name.s, copy_n);
+            if (seq->comment.l > 0) fprintf(outfp, " %s\n", seq->comment.s);
+            else fprintf(outfp, "\n");
+            for (i = 0; i < seq->seq.l * copy_n; ++i) {
+                fprintf(outfp, "%c", seq->seq.s[i % seq->seq.l]);
+            } fprintf(outfp, "\n");
+
+        }
+    }
+       
+    err_gzclose(infp);
+    err_fclose(outfp);
+    return 0;
+}
 #define bam_unmap(b) ((b)->core.flag & BAM_FUNMAP)
 
 int fxt_error_parse(int argc, char *argv[])
@@ -927,6 +970,68 @@ int fxt_trim(int argc, char *argv[]) {
     return 0;
 }
 
+// trim polyA tail or polyT tail
+int fxt_trimF(int argc, char *argv[]) {
+    if (argc != 5) {
+        err_printf("Usage: fxtools trimF in.fa/fq min_trim_length min_fraction window_size > out.fa\n");
+        err_printf("\n");
+        return 0;
+    }
+    gzFile infp = xzopen(argv[1], "r");
+    size_t min_len = atoi(argv[2]), win_size = atoi(argv[4]);
+    float min_frac = atof(argv[3]);
+    kseq_t *seq;
+    seq = kseq_init(infp);
+    FILE *outfp = stdout;
+
+    size_t i,j, trim_s, trim_e;
+    while (kseq_read(seq) >= 0)
+    {
+        trim_s = 0; trim_e = seq->seq.l-1;
+        // polyT head
+        for (i = 0; i < seq->seq.l - win_size + 1; ++i) {
+            int T_n = 0;
+            for (j = i; j < i+win_size; ++j) {
+                if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u')
+                    T_n++;
+            }
+            if (T_n / (win_size + 0.0) >= min_frac) {
+                if (seq->seq.s[j-1] == 'T' || seq->seq.s[j-1] == 'U' || seq->seq.s[j-1] == 't' || seq->seq.s[j-1] == 'u')
+                    trim_s = i + win_size;
+            } else break;
+        }
+        if (trim_s < min_len) trim_s = 0;
+        if (trim_s == 0) {
+            for (i = seq->seq.l - 1; i >= win_size - 1; --i) {
+                int A_n = 0;
+                for (j = i; j >= i-win_size+1; --j) {
+                    if (seq->seq.s[j] == 'A' || seq->seq.s[j] == 'a')
+                        A_n++;
+                }
+                if (A_n / (win_size + 0.0) >= min_frac) {
+                    if (seq->seq.s[j+1]=='A' || seq->seq.s[j+1]=='a')
+                        trim_e = i - win_size;
+                } else break;
+            }
+            if (seq->seq.l-1 - trim_e < min_len) trim_e = seq->seq.l-1;
+        }
+        if (trim_s != 0 || trim_e != seq->seq.l-1) {
+            fprintf(outfp, ">%s_trim:%ld_%ld", seq->name.s, trim_s, trim_e);
+            if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
+            fprintf(outfp, "\n");
+
+            for (i = trim_s; i <= trim_e; ++i) {
+                fprintf(outfp, "%c", seq->seq.s[i]);
+            }
+            fprintf(outfp, "\n");
+        }
+    }
+
+    err_gzclose(infp);
+    err_fclose(outfp);
+    return 0;
+}
+
 int main(int argc, char*argv[])
 {
     if (argc < 2) return usage();
@@ -943,10 +1048,12 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-fa") == 0 || strcmp(argv[1], "mf") == 0) fxt_merge_fa(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-filter-fa") == 0 || strcmp(argv[1], "mff") == 0) fxt_merge_filter_fa(argc-1, argv+1);
+    else if (strcmp(argv[1], "duplicate-fa") == 0 || strcmp(argv[1], "df") == 0) fxt_duplicate_fa(argc-1, argv+1);
     else if (strcmp(argv[1], "error-parse") == 0 || strcmp(argv[1], "ep") == 0) fxt_error_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "dna2rna") == 0 || strcmp(argv[1], "dr") == 0) fxt_dna2rna(argc-1, argv+1);
     else if (strcmp(argv[1], "rna2dna") == 0 || strcmp(argv[1], "rd") == 0) fxt_rna2dna(argc-1, argv+1);
     else if (strcmp(argv[1], "trim") == 0 || strcmp(argv[1], "tr") == 0) fxt_trim(argc-1, argv+1);
+    else if (strcmp(argv[1], "trimF") == 0 || strcmp(argv[1], "tr") == 0) fxt_trimF(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
