@@ -913,6 +913,43 @@ int fxt_bam2bed(int argc, char *argv[]) {
     return 0;
 }
 
+int fxt_sam_flag(int argc, char *argv[]) {
+    if (argc != 3) {
+        err_printf("Usage: fxtools sam-flag in.sam/bam flag > flag.out\n");
+        err_printf("\n");
+        return 0;
+    }
+    char bamfn[1024], flag[10];
+    strcpy(bamfn, argv[1]); strcpy(flag, argv[2]);
+    samFile *in; bam_hdr_t *h; bam1_t *b;
+    if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
+    b = bam_init1();
+    int r;
+    while ((r = sam_read1(in, h, b)) >= 0) {
+        uint8_t *p = bam_aux_get(b, flag);
+        if (p == 0) {
+            fprintf(stderr, "%s has No \"%s\" tag.\n", bam_get_qname(b), flag);
+        } else {
+            if (*p == 'i' || *p == 'C' || *p == 'c' || *p == 's' || *p == 'S') {
+                int i = bam_aux2i(p);
+                fprintf(stdout, "%s\t%d\n", bam_get_qname(b), i);
+            } else if (*p == 'd' || *p == 'f') {
+                double d = bam_aux2f(p);
+                fprintf(stdout, "%s\t%lf\n", bam_get_qname(b), d);
+            } else if (*p == 'A') { 
+                char c = bam_aux2A(p);
+                fprintf(stdout, "%s\t%c\n", bam_get_qname(b), c);
+            } else if (*p == 'Z' || *p == 'H') { 
+                char *c = bam_aux2Z(p);
+                fprintf(stdout, "%s\t%s\n", bam_get_qname(b), c);
+            }
+        }
+    }
+    bam_hdr_destroy(h); sam_close(in); bam_destroy1(b);
+    return 0;
+}
+
 // trim polyA tail or polyT tail
 int fxt_trim(int argc, char *argv[]) {
     if (argc != 5) {
@@ -1058,6 +1095,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "rna2dna") == 0 || strcmp(argv[1], "rd") == 0) fxt_rna2dna(argc-1, argv+1);
     else if (strcmp(argv[1], "trim") == 0 || strcmp(argv[1], "tr") == 0) fxt_trim(argc-1, argv+1);
     else if (strcmp(argv[1], "trimF") == 0 || strcmp(argv[1], "tr") == 0) fxt_trimF(argc-1, argv+1);
+    else if (strcmp(argv[1], "sam-flag") == 0 || strcmp(argv[1], "sf") == 0) fxt_sam_flag(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
