@@ -7,8 +7,8 @@
 #include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
-#include "htslib/htslib/sam.h"
-#include "htslib/htslib/faidx.h"
+#include "htslib/sam.h"
+#include "htslib/faidx.h"
 
 #define _ll_t long long
 
@@ -64,9 +64,12 @@ void print_seq(FILE *out, kseq_t *seq)
 }
 
 int _bam_cigar2qlen(int n_cigar, uint32_t *cigar) {
-    int i, len = 0;
+    int i, len = 0, l, op;
     for (i = 0; i < n_cigar; ++i) {
-        int l = cigar[i]>>4, op=cigar[i]&0xf;
+        l = cigar[i] >> 4; 
+        op = cigar[i] & 0xf;
+        fprintf(stdout, "");
+
         if (op != BAM_CDEL && op != BAM_CREF_SKIP)
             len += l;
     }
@@ -776,7 +779,7 @@ int fxt_error_parse(int argc, char *argv[])
     int i, seq_len, unmap_flag=0, md, ins, del, mis, match, clip, skip;
 
     samFile *in; bam_hdr_t *h; bam1_t *b;
-    if ((in = sam_open(argv[optind], "rb")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
+    if ((in = sam_open(argv[optind], "r")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
     if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[optind]);
     b = bam_init1(); 
 
@@ -820,6 +823,7 @@ int fxt_error_parse(int argc, char *argv[])
     }
     fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
     fprintf(stdout, "Total mapped read: %lld\nTotal unmapped read: %lld\nTotal read: %lld\nError rate: %f\n", tol_n-unmap, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_del+tol_mis));
+    bam_destroy1(b); sam_close(in); bam_hdr_destroy(h);
     return 0;
 }
 

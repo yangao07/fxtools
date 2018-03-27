@@ -1,5 +1,5 @@
 CC      =	gcc
-CFLAGS  =	-Wall -O3 -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
+CFLAGS  =	-Wall -O2 -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
 DFLAGS  =	-g -Wall  
 HTSLIB_DIR = ./htslib
 HTSLIB  =   $(HTSLIB_DIR)/libhts.a
@@ -35,9 +35,9 @@ $(BIN): $(OBJS)
 		$(CC) $(OBJS) -o $@ $(LIB)
 
 $(GDB_DEBUG):
-		$(CC) $(DFLAGS) $(SOURCE) $(DMARCRO) -o $@ $(LIB)
+		$(CC) $(DFLAGS) $(INCLUDE) $(SOURCE) $(DMARCRO) -o $@ $(LIB)
 $(NOR_DEBUG):
-		$(CC) $(CFLAGS) $(SOURCE) $(DMARCRO) -o $@ $(LIB)
+		$(CC) $(CFLAGS) $(INCLUDE) $(SOURCE) $(DMARCRO) -o $@ $(LIB)
 
 
 clean:
