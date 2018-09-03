@@ -176,11 +176,12 @@ int fxt_filter_name(int argc, char* argv[])
 
 int fxt_filter_bam_name(int argc, char *argv[])
 {
-    int c, n=0, m=0; char name[1024], sub_name[1024];
-    while ((c = getopt(argc, argv, "n:m:")) >= 0) {
+    int c, n=0, m=0, input_list=0; char name[1024], sub_name[1024];
+    while ((c = getopt(argc, argv, "n:m:l")) >= 0) {
         switch (c) {
             case 'n': n=1, strcpy(name, optarg); break;
             case 'm': m=1, strcpy(sub_name, optarg); break;
+            case 'l': input_list=1; break;
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
         }
     }
@@ -190,6 +191,8 @@ int fxt_filter_bam_name(int argc, char *argv[])
         fprintf(stderr, "Usage: fxtools filter-bam-name [-n name] [-m sub-name] <in.bam/sam> > <out.bam>\n");
         fprintf(stderr, "      -n [STR]    only output bam record with specified read name.\n");
         fprintf(stderr, "      -m [STR]    only output bam record whose read name contain specified string.\n");
+        fprintf(stderr, "      -l          input a list of names or sub-names with a list file, each line is a name or sub-name. [Flase]\n");
+        fprintf(stderr, "                  For example, \'fxtools fbn -n name.list in.bam > out.bam\'\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
@@ -203,14 +206,65 @@ int fxt_filter_bam_name(int argc, char *argv[])
     if (sam_hdr_write(out, h) != 0) err_fatal_simple("Error in writing SAM header\n"); //sam header
 
     char qname[1024];
-    while (sam_read1(in, h, b) >= 0) {
-        strcpy(qname, bam_get_qname(b));
+    if (input_list) {
+        int i, name_n=0, name_m = 10; FILE *fp;
+        char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
+        for (i = 0; i < name_m; ++i) 
+            name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+        // read name/sub_name
         if (n) {
-            if (strcmp(qname, name) != 0) continue;
-        } else { // m
-            if (strstr(qname, sub_name) == NULL) continue;
+            fp = xopen(name, "r");
+        } else {
+            fp = xopen(sub_name, "r");
         }
-        if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
+        char line[1024];
+        while (fgets(line, 1024, fp) != NULL) {
+            if (line[strlen(line)-1] == '\n')
+                line[strlen(line)-1] = '\0';
+            if (name_n == name_m) {
+                name_array = (char**)_err_realloc(name_array, name_n << 1 * sizeof(char*));
+                for (i = name_n; i < name_n << 1; ++i)
+                    name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+                name_m = name_n << 1;
+            }
+            strcpy(name_array[name_n++], line);
+        }
+
+        err_fclose(fp);
+
+        while (sam_read1(in, h, b) >= 0) {
+            int hit = 0;
+            strcpy(qname, bam_get_qname(b));
+            if (n) {
+                for (i = 0; i < name_n; ++i) {
+                    if (strcmp(qname, name_array[i]) == 0) {
+                        hit = 1;
+                        break;
+                    }
+                }
+            } else {
+                for (i = 0; i < name_n; ++i) {
+                    if (strstr(qname, name_array[i]) != NULL) {
+                        hit = 1;
+                        break;
+                    }
+                }
+            }
+            if (hit) {
+                if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
+            }
+        }
+        for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
+    } else {
+        while (sam_read1(in, h, b) >= 0) {
+            strcpy(qname, bam_get_qname(b));
+            if (n) {
+                if (strcmp(qname, name) != 0) continue;
+            } else { // m
+                if (strstr(qname, sub_name) == NULL) continue;
+            }
+            if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
+        }
     }
     bam_destroy1(b); bam_hdr_destroy(h); sam_close(in); sam_close(out);
     return 0;
@@ -250,7 +304,7 @@ int fxt_fa2fq(int argc, char *argv[])
         exit(-1);
     } 
     gzFile infp = xzopen(argv[1], "r");
-    
+
     kseq_t *seq;
     seq = kseq_init(infp);
     FILE *outfp = stdout;
