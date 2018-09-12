@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <getopt.h>
+#include <libgen.h>
 #include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
@@ -23,6 +24,7 @@ int usage(void)
     fprintf(stderr, "         filter-name (fn)      filter fa/fq sequences with specified name.\n");
     fprintf(stderr, "         filter-bam (fb)       filter bam/sam records with specified read length boundary.\n");
     fprintf(stderr, "         filter-bam-name (fbn) filter bam/sam records with specified read name.\n");
+    fprintf(stderr, "         split-fx (sx)         split fa/fq file into multipule files.\n");
     fprintf(stderr, "         fq2fa (qa)            convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq (aq)            convert FASTA format data to FASTQ format data.\n");
     fprintf(stderr, "         bam2bed (bb)          convert BAM file to BED file. seperated exon regions for spliced BAM\n");
@@ -85,7 +87,7 @@ int fxt_filter(int argc, char* argv[])
         fprintf(stderr, "\n");
         exit(-1);
     }
-    gzFile infp = xzopen(argv[2], "r");
+    gzFile infp = xzopen(argv[1], "r");
     FILE *out = stdout;
     kseq_t *seq;
     seq = kseq_init(infp);
@@ -134,39 +136,99 @@ int fxt_filter_bam(int argc, char *argv[])
 
 int fxt_filter_name(int argc, char* argv[])
 {
-    int c, n=0, m=0; char name[1024], sub_name[1024];
-    while ((c = getopt(argc, argv, "n:m:")) >= 0) {
+    int c, n=0, m=0, input_list=0; char name[1024], sub_name[1024];
+    while ((c = getopt(argc, argv, "n:m:l")) >= 0) {
         switch (c) {
             case 'n': n=1, strcpy(name, optarg); break;
             case 'm': m=1, strcpy(sub_name, optarg); break;
+            case 'l': input_list = 1; break;
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
         }
     }
     if (n + m != 1 || argc - optind != 1) 
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools filter-name [-n name] [-m sub-name] <in.fa/fq> > <out.fa/fq>\n");
+        fprintf(stderr, "Usage: fxtools filter-name [-n name] [-m sub-name] [-l] <in.fa/fq> > <out.fa/fq>\n");
         fprintf(stderr, "      -n [STR]    only output read with specified name.\n");
         fprintf(stderr, "      -m [STR]    only output read whose name or comment contain specified string.\n");
+        fprintf(stderr, "      -l          input a list of names or sub-names with a list file, each line is a name or sub-name. [False]\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
     gzFile infp = xzopen(argv[optind], "r");
     FILE *out = stdout;
-    kseq_t *seq;
-    seq = kseq_init(infp);
-    while (kseq_read(seq) >= 0)
-    {
+    kseq_t *seq = kseq_init(infp);
+
+    if (input_list) {
+        int i, name_n=0, name_m = 10; FILE *fp;
+        char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
+        for (i = 0; i < name_m; ++i) 
+            name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+        // read name/sub_name
         if (n) {
-            if (strcmp(seq->name.s, name) != 0) continue;
-        } else { // m
-            if (seq->comment.l > 0) {
-                if (strstr(seq->name.s, sub_name) == NULL && strstr(seq->comment.s, sub_name) == NULL) continue;
-            } else {
-                if (strstr(seq->name.s, sub_name) == NULL) continue;
-            }
+            fp = xopen(name, "r");
+        } else {
+            fp = xopen(sub_name, "r");
         }
-        print_seq(out, seq); 
+        char line[1024];
+        while (fgets(line, 1024, fp) != NULL) {
+            if (line[strlen(line)-1] == '\n')
+                line[strlen(line)-1] = '\0';
+            if (name_n == name_m) {
+                name_array = (char**)_err_realloc(name_array, name_n << 1 * sizeof(char*));
+                for (i = name_n; i < name_n << 1; ++i)
+                    name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+                name_m = name_n << 1;
+            }
+            strcpy(name_array[name_n++], line);
+        }
+
+        err_fclose(fp);
+        int hit;
+        while (kseq_read(seq) >= 0) {
+            hit = 0;
+            if (n) {
+                for (i = 0; i < name_n; ++i) {
+                    if (strcmp(seq->name.s, name_array[i]) == 0) {
+                        hit = 1;
+                        break;
+                    }
+                }
+            } else { // m
+                if (seq->comment.l > 0) {
+                    for (i = 0; i < name_n; ++i) {
+                        if (strstr(seq->name.s, name_array[i]) != NULL || strstr(seq->comment.s, name_array[i]) != NULL) {
+                            hit = 1;
+                            break;
+                        }
+                    }
+                } else {
+                    for (i = 0; i < name_n; ++i) {
+                        if (strstr(seq->name.s, name_array[i]) == NULL) {
+                            hit = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (hit) print_seq(out, seq); 
+        }
+
+        for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
+    } else {
+        while (kseq_read(seq) >= 0)
+        {
+            if (n) {
+                if (strcmp(seq->name.s, name) != 0) continue;
+            } else { // m
+                if (seq->comment.l > 0) {
+                    if (strstr(seq->name.s, sub_name) == NULL && strstr(seq->comment.s, sub_name) == NULL) continue;
+                } else {
+                    if (strstr(seq->name.s, sub_name) == NULL) continue;
+                }
+            }
+            print_seq(out, seq); 
+        }
     }
 
     err_fclose(out);
@@ -188,10 +250,10 @@ int fxt_filter_bam_name(int argc, char *argv[])
     if (n + m != 1 || argc - optind != 1) 
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools filter-bam-name [-n name] [-m sub-name] <in.bam/sam> > <out.bam>\n");
+        fprintf(stderr, "Usage: fxtools filter-bam-name [-n name] [-m sub-name] [-l] <in.bam/sam> > <out.bam>\n");
         fprintf(stderr, "      -n [STR]    only output bam record with specified read name.\n");
         fprintf(stderr, "      -m [STR]    only output bam record whose read name contain specified string.\n");
-        fprintf(stderr, "      -l          input a list of names or sub-names with a list file, each line is a name or sub-name. [Flase]\n");
+        fprintf(stderr, "      -l          input a list of names or sub-names with a list file, each line is a name or sub-name. [False]\n");
         fprintf(stderr, "                  For example, \'fxtools fbn -n name.list in.bam > out.bam\'\n");
         fprintf(stderr, "\n");
         exit(-1);
@@ -267,6 +329,41 @@ int fxt_filter_bam_name(int argc, char *argv[])
         }
     }
     bam_destroy1(b); bam_hdr_destroy(h); sam_close(in); sam_close(out);
+    return 0;
+}
+
+int fxt_split_fx(int argc, char *argv[])
+{
+    int i;
+    if (argc != 4) {
+        err_printf("\nUsage: fxtools split-fx <in.fa/q> <N> <out_dir>\n\n");
+        exit(-1);
+    }
+    gzFile infp = xzopen(argv[1], "r"); int n_files = atoi(argv[2]); char *out_dir = strdup(argv[3]);
+    kseq_t *seq = kseq_init(infp);
+    // file names of split files
+    char *base = basename(argv[1]), out_name[1024];
+
+    FILE **outfp = (FILE**)_err_malloc(n_files * sizeof(FILE*));
+    for (i = 0; i < n_files; ++i) {
+        sprintf(out_name, "%s/%s.%d", out_dir, base, i+1);
+        outfp[i] = fopen(out_name, "w");
+    }
+    int read_i = 0; FILE *fp;
+    while (kseq_read(seq) >= 0) {
+        fp = outfp[read_i % n_files];
+        fprintf(fp, ">%s", seq->name.s);
+        if (seq->comment.l > 0) fprintf(fp, " %s", seq->comment.s);
+        fprintf(fp, "\n");
+
+        fprintf(fp, "%s\n", seq->seq.s);
+        read_i++;
+    }
+
+    for (i = 0; i < n_files; ++i) {
+        fclose(outfp[i]);
+    } free(outfp);
+    err_gzclose(infp);
     return 0;
 }
 
@@ -1134,6 +1231,7 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "filter-name") == 0 || strcmp(argv[1], "fn") == 0) fxt_filter_name(argc-1, argv+1);
     else if (strcmp(argv[1], "filter-bam") == 0 || strcmp(argv[1], "fb") == 0) fxt_filter_bam(argc-1, argv+1);
     else if (strcmp(argv[1], "filter-bam-name") == 0 || strcmp(argv[1], "fbn") == 0) fxt_filter_bam_name(argc-1, argv+1);
+    else if (strcmp(argv[1], "split-fx") == 0 || strcmp(argv[1], "sx") == 0) fxt_split_fx(argc-1, argv+1);
     else if (strcmp(argv[1], "fq2fa") == 0 || strcmp(argv[1], "qa") == 0) fxt_fq2fa(argc-1, argv+1);
     else if (strcmp(argv[1], "fa2fq") == 0 || strcmp(argv[1], "aq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0 || strcmp(argv[1], "rc") == 0) fxt_re_co(argc-1, argv+1);
