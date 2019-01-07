@@ -957,8 +957,8 @@ int fxt_error_parse(int argc, char *argv[])
                     default : err_fatal_simple("Cigar ERROR.\n");
                 }
             }
+            seq_len = _bam_cigar2qlen(cigar_len, cigar);
             if (equal == 0 && diff == 0) {
-                seq_len = _bam_cigar2qlen(cigar_len, cigar);
                 uint8_t *p = bam_aux_get(b, "NM");
                 if (p == 0) p = bam_aux_get(b, "nM");
                 if (p == 0) {
