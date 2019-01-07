@@ -928,6 +928,7 @@ int fxt_error_parse(int argc, char *argv[])
     fprintf(stdout, "READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
     long long tol_n=0, unmap=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
     int i, seq_len, unmap_flag=0, md, ins, del, mis, match, clip, skip;
+    int equal, diff;
 
     samFile *in; bam_hdr_t *h; bam1_t *b;
     if ((in = sam_open(argv[optind], "r")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
@@ -938,6 +939,7 @@ int fxt_error_parse(int argc, char *argv[])
         tol_n++;
         unmap_flag = 0;
         md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+        equal = 0, diff = 0;
         if (!bam_unmap(b)) {
             uint32_t *cigar = bam_get_cigar(b); int cigar_len = b->core.n_cigar;
             for (i = 0; i < cigar_len; ++i) {
@@ -945,6 +947,8 @@ int fxt_error_parse(int argc, char *argv[])
                 int len = bam_cigar_oplen(c);
                 switch (bam_cigar_op(c)) {
                     case BAM_CMATCH: match += len; break;
+                    case BAM_CEQUAL: equal += len; break;
+                    case BAM_CDIFF: diff += len; break;
                     case BAM_CINS: ins += len; break;
                     case BAM_CDEL: del += len; break;
                     case BAM_CREF_SKIP: skip += len; break;
@@ -953,16 +957,20 @@ int fxt_error_parse(int argc, char *argv[])
                     default : err_fatal_simple("Cigar ERROR.\n");
                 }
             }
-            seq_len = _bam_cigar2qlen(cigar_len, cigar);
-            uint8_t *p = bam_aux_get(b, "NM");
-            if (p == 0) p = bam_aux_get(b, "nM");
-            if (p == 0) {
-                err_fatal_core(__func__, "%s No \"NM\" tag.\n", bam_get_qname(b));
-                return 0;
+            if (equal == 0 && diff == 0) {
+                seq_len = _bam_cigar2qlen(cigar_len, cigar);
+                uint8_t *p = bam_aux_get(b, "NM");
+                if (p == 0) p = bam_aux_get(b, "nM");
+                if (p == 0) {
+                    err_fatal_core(__func__, "%s No \"NM\" tag.\n", bam_get_qname(b));
+                    return 0;
+                }
+                md = bam_aux2i(p);
+                mis = md - ins - del;
+                match = match - mis;
+            } else {
+                mis = diff; match = equal;
             }
-            md = bam_aux2i(p);
-            mis = md - ins - del;
-            match = match - mis;
         } else {
             unmap++;
             unmap_flag = 1;
