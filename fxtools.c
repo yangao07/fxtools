@@ -891,7 +891,7 @@ int fxt_duplicate_fa(int argc, char *argv[])
     while (kseq_read(seq) >= 0)
     {
         if (seq->qual.l > 0) { // fastq
-            fprintf(outfp, "@%s_copy:%f", seq->name.s, copy_n);
+            fprintf(outfp, "@%s_copy:%.2f", seq->name.s, copy_n);
             if (seq->comment.l > 0) fprintf(outfp, " %s\n", seq->comment.s);
             else fprintf(outfp, "\n");
             for (i = 0; i < seq->seq.l * copy_n; ++i) {
@@ -902,7 +902,7 @@ int fxt_duplicate_fa(int argc, char *argv[])
                 fprintf(outfp, "%c", seq->qual.s[i % seq->qual.l]);
             } fprintf(outfp, "\n");
         } else { // fasta
-            fprintf(outfp, ">%s_copy:%f", seq->name.s, copy_n);
+            fprintf(outfp, ">%s_copy:%.2f", seq->name.s, copy_n);
             if (seq->comment.l > 0) fprintf(outfp, " %s\n", seq->comment.s);
             else fprintf(outfp, "\n");
             for (i = 0; i < seq->seq.l * copy_n; ++i) {
