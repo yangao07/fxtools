@@ -985,7 +985,7 @@ int fxt_error_parse(int argc, char *argv[])
         fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
     }
     fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
-    fprintf(stdout, "Total mapped read: %lld (%.1f%)\nTotal unmapped read: %lld\nTotal read: %lld\nError rate: %.1f%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
+    fprintf(stdout, "Total mapped read: %lld (%.1f%%)\nTotal unmapped read: %lld\nTotal read: %lld\nError rate: %.1f%%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
     bam_destroy1(b); sam_close(in); bam_hdr_destroy(h);
     return 0;
 }
