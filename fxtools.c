@@ -643,6 +643,32 @@ int fxt_cigar_parse(int argc, char *argv[])
     return 0;
 }
 
+int int_cmp(void *a, void *b) {
+    return *((int*)a) - *((int*)b);
+}
+
+void print_len_stats(char *fn, int *len, int n) {
+    int i, tot_len;
+    qsort(len, n, sizeof(int), int_cmp);
+    tot_len = 0;
+    for (i = 0; i < n; ++i)
+        tot_len += len[i];
+    float mean_len; int n50_len = 0, n50_tot_len = 0;
+    mean_len = tot_len / (n + 0.0);
+    for (i = n-1; i >= 0; --i) {
+        n50_tot_len += len[i];
+        if (n50_tot_len >= tot_len / 2) {
+            n50_len = len[i];
+            break;
+        }
+    }
+    fprintf(stderr, "== \'%s\' read length stats ==\n", fn);
+    fprintf(stderr, "Total reads\t%16d\n", n);
+    fprintf(stderr, "Total bases\t%16d\n", tot_len);
+    fprintf(stderr, "Mean length\t%16.0f\n", mean_len);
+    fprintf(stderr, "N-50 length\t%16d\n", n50_len);
+}
+
 int fxt_len_parse(int argc, char *argv[])
 {
     if (argc < 2)
@@ -652,18 +678,27 @@ int fxt_len_parse(int argc, char *argv[])
         fprintf(stderr, "\n"); 
         exit(-1);
     }
-    int i;
+    int i, *len, n, m;
+    n = 0, m = 1000;
+    len = (int*)_err_malloc(m * sizeof(int));
     for(i = 1; i < argc; ++i) {
+        n = 0;
         gzFile infp = xzopen(argv[i], "r");
         kseq_t *seq;
         seq = kseq_init(infp);
         while (kseq_read(seq) >= 0)
         {
             fprintf(stdout, "%s\t%d\n", seq->name.s, (int)seq->seq.l);       
+            if (n == m) {
+                m <<= 1;
+                len = (int*)_err_realloc(len, m * sizeof(int));
+            }
+            len[n++] = seq->seq.l;
         }
-
+        print_len_stats(argv[i], len, n);
         err_gzclose(infp);
     }
+    free(len);
     return 0;
 }
 int comp(const void *a, const void *b) {return (*(int*)a-*(int*)b); }
