@@ -643,8 +643,8 @@ int fxt_cigar_parse(int argc, char *argv[])
     return 0;
 }
 
-int int_cmp(void *a, void *b) {
-    return *((int*)a) - *((int*)b);
+int int_cmp(const void *a, const void *b) {
+    return (*(int*)a - *(int*)b);
 }
 
 void print_len_stats(char *fn, int *len, int n) {
@@ -654,7 +654,8 @@ void print_len_stats(char *fn, int *len, int n) {
     for (i = 0; i < n; ++i)
         tot_len += len[i];
     float mean_len; int n50_len = 0, n50_tot_len = 0;
-    mean_len = tot_len / (n + 0.0);
+    if (n == 0) mean_len = 0;
+    else mean_len = tot_len / (n + 0.0);
     for (i = n-1; i >= 0; --i) {
         n50_tot_len += len[i];
         if (n50_tot_len >= tot_len / 2) {
@@ -674,7 +675,7 @@ int fxt_len_parse(int argc, char *argv[])
     if (argc < 2)
     {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools length-parse <in.fa/fq>\n");
+        fprintf(stderr, "Usage: fxtools length-parse <in.fa/fq/len>\n");
         fprintf(stderr, "\n"); 
         exit(-1);
     }
@@ -682,26 +683,46 @@ int fxt_len_parse(int argc, char *argv[])
     n = 0, m = 1000;
     len = (int*)_err_malloc(m * sizeof(int));
     for(i = 1; i < argc; ++i) {
+        int not_len_file = 1;
         n = 0;
         gzFile infp = xzopen(argv[i], "r");
-        kseq_t *seq;
-        seq = kseq_init(infp);
-        while (kseq_read(seq) >= 0)
-        {
-            fprintf(stdout, "%s\t%d\n", seq->name.s, (int)seq->seq.l);       
-            if (n == m) {
-                m <<= 1;
-                len = (int*)_err_realloc(len, m * sizeof(int));
-            }
-            len[n++] = seq->seq.l;
-        }
-        print_len_stats(argv[i], len, n);
+        // check if input file is .len file
+        char buff[1024]; int buff_n;
+        buff_n = gzread(infp, buff, 10);
+        if (buff[0] != '>' && buff[0] != '@')
+            not_len_file = 0;
         err_gzclose(infp);
+
+        infp  = xzopen(argv[i], "r");
+        if (not_len_file) {
+            kseq_t *seq;
+            seq = kseq_init(infp);
+            while (kseq_read(seq) >= 0)
+            {
+                fprintf(stdout, "%s\t%d\n", seq->name.s, (int)seq->seq.l);       
+                if (n == m) {
+                    m <<= 1;
+                    len = (int*)_err_realloc(len, m * sizeof(int));
+                }
+                len[n++] = seq->seq.l;
+            }
+        } else { // is .len file
+            int seq_len;
+            while (gzgets(infp, buff, 1024) != NULL) {
+                sscanf(buff, "%*s %d", &seq_len);
+                if (n == m) {
+                    m <<= 1;
+                    len = (int*)_err_realloc(len, m * sizeof(int));
+                }
+                len[n++] = seq_len; 
+            }
+        }
+        err_gzclose(infp);
+        print_len_stats(argv[i], len, n);
     }
     free(len);
     return 0;
 }
-int comp(const void *a, const void *b) {return (*(int*)a-*(int*)b); }
 
 int fxt_merge_filter_fa(int argc, char *argv[])
 {
@@ -741,7 +762,7 @@ int fxt_merge_filter_fa(int argc, char *argv[])
                 // cal i1 and i2
                 i1 = -1, i2 = -1;
                 for (i = 0; i < n; ++i) tmp[i] = len[i];
-                qsort(tmp, n, sizeof(int), comp);
+                qsort(tmp, n, sizeof(int), int_cmp);
                 if (n > 1 && n <= 10) {
                     fprintf(outfp, ">%s r1", read_name);
                     for (i = 0; i < n; ++i) {
@@ -796,7 +817,7 @@ int fxt_merge_filter_fa(int argc, char *argv[])
         // cal i1 and i2
         i1 = -1, i2 = -1;
         for (i = 0; i < n; ++i) tmp[i] = len[i];
-        qsort(tmp, n, sizeof(int), comp);
+        qsort(tmp, n, sizeof(int), int_cmp);
         if (n > 1 && n < 10) {
             fprintf(outfp, ">%s r1", read_name);
             for (i = 0; i < n; ++i) {
