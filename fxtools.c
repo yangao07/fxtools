@@ -5,6 +5,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <libgen.h>
+#include <stdint.h>
 #include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
@@ -648,14 +649,18 @@ int int_cmp(const void *a, const void *b) {
 }
 
 void print_len_stats(char *fn, int *len, int n) {
-    int i, tot_len;
+    int i, min_len=INT32_MAX, max_len=INT32_MIN, n50_len=0; float mean_len;
+    long long tot_len = 0, n50_tot_len = 0;
+
     qsort(len, n, sizeof(int), int_cmp);
-    tot_len = 0;
-    for (i = 0; i < n; ++i)
+    for (i = 0; i < n; ++i) {
         tot_len += len[i];
-    float mean_len; int n50_len = 0, n50_tot_len = 0;
+        if (len[i] > max_len) max_len = len[i];
+        if (len[i] < min_len) min_len = len[i];
+    }
     if (n == 0) mean_len = 0;
     else mean_len = tot_len / (n + 0.0);
+
     for (i = n-1; i >= 0; --i) {
         n50_tot_len += len[i];
         if (n50_tot_len >= tot_len / 2) {
@@ -665,8 +670,10 @@ void print_len_stats(char *fn, int *len, int n) {
     }
     fprintf(stderr, "== \'%s\' read length stats ==\n", fn);
     fprintf(stderr, "Total reads\t%16d\n", n);
-    fprintf(stderr, "Total bases\t%16d\n", tot_len);
+    fprintf(stderr, "Total bases\t%16lld\n", tot_len);
     fprintf(stderr, "Mean length\t%16.0f\n", mean_len);
+    fprintf(stderr, "Min. length\t%16d\n", min_len);
+    fprintf(stderr, "Max. length\t%16d\n", max_len);
     fprintf(stderr, "N-50 length\t%16d\n", n50_len);
 }
 
