@@ -461,7 +461,7 @@ int fxt_re_co(int argc, char *argv[])
        seq = read_seq->seq.s;
        for (i = 0; i < len; i++)
            seq_n[i] = nt_table[(int)seq[i]];
-       fprintf(out, ">%s_re-co:", read_seq->name.s);
+       fprintf(out, ">%s_reverse_complementary", read_seq->name.s);
        if (read_seq->comment.l > 0) fprintf(out, " %s", read_seq->comment.s);
        fprintf(out, "\n");
        for (i = len - 1; i>=0; i--)
