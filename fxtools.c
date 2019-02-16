@@ -986,9 +986,18 @@ int fxt_duplicate_fa(int argc, char *argv[])
 
 int fxt_error_parse(int argc, char *argv[])
 {
-    if (argc != 2)
+    int c, parse_non_primary = 0;
+    while ((c = getopt(argc, argv, "s")) >= 0) {
+        switch (c) {
+            case 's': parse_non_primary=1; break;
+            default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
+        }
+    }
+    if (argc - optind != 1)
     {
-        fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools error-parse <input.bam> > error.out\n\n");
+        fprintf(stderr, "\n"); 
+        fprintf(stderr, "Usage: fxtools error-parse <input.bam> [-s] > error.out\n");
+        fprintf(stderr, "         -s    include non-primary records in the output.\n\n");
         return 1;
     }
     fprintf(stdout, "READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
@@ -1002,7 +1011,7 @@ int fxt_error_parse(int argc, char *argv[])
     b = bam_init1(); 
 
     while (sam_read1(in, h, b) >= 0) {
-        if (b->core.flag & BAM_FSECONDARY || b->core.flag & BAM_FSUPPLEMENTARY) continue;
+        if (!parse_non_primary && (b->core.flag & BAM_FSECONDARY || b->core.flag & BAM_FSUPPLEMENTARY)) continue;
         tol_n++;
         unmap_flag = 0;
         md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
