@@ -6,6 +6,7 @@
 #include <getopt.h>
 #include <libgen.h>
 #include <stdint.h>
+#include <locale.h>
 #include "utils.h"
 #include "fxtools.h"
 #include "kseq.h"
@@ -636,11 +637,13 @@ int fxt_cigar_parse(int argc, char *argv[])
         ++cigar_len;
         s = t+1;
     }
+    setlocale(LC_NUMERIC, "");
+    fprintf(stdout, "\nCigar length:\n");
     for (i = 0; i < 11; ++i)
     {
-        if (op[i] != 0) fprintf(stdout, "%ld%c\t", op[i], CIGAR_STR[i]);
+        if (op[i] != 0) fprintf(stdout, "%'16ld %c\n", op[i], CIGAR_STR[i]);
     }
-    fprintf(stdout, "\nseq-len: %d\nref-len: %d\n", seq_len, ref_len);
+    fprintf(stdout, "\nseq-len: %'7d\nref-len: %'7d\n", seq_len, ref_len);
     return 0;
 }
 
@@ -649,6 +652,7 @@ int int_cmp(const void *a, const void *b) {
 }
 
 void print_len_stats(char *fn, int *len, int n) {
+    setlocale(LC_NUMERIC, "");
     int i, min_len=INT32_MAX, max_len=INT32_MIN, n50_len=0; float mean_len;
     long long tot_len = 0, n50_tot_len = 0;
 
@@ -669,12 +673,12 @@ void print_len_stats(char *fn, int *len, int n) {
         }
     }
     fprintf(stderr, "== \'%s\' read length stats ==\n", fn);
-    fprintf(stderr, "Total reads\t%16d\n", n);
-    fprintf(stderr, "Total bases\t%16lld\n", tot_len);
-    fprintf(stderr, "Mean length\t%16.0f\n", mean_len);
-    fprintf(stderr, "Min. length\t%16d\n", min_len);
-    fprintf(stderr, "Max. length\t%16d\n", max_len);
-    fprintf(stderr, "N-50 length\t%16d\n", n50_len);
+    fprintf(stderr, "Total reads\t%'16d\n", n);
+    fprintf(stderr, "Total bases\t%'16lld\n", tot_len);
+    fprintf(stderr, "Mean length\t%'16.0f\n", mean_len);
+    fprintf(stderr, "Min. length\t%'16d\n", min_len);
+    fprintf(stderr, "Max. length\t%'16d\n", max_len);
+    fprintf(stderr, "N-50 length\t%'16d\n", n50_len);
 }
 
 int fxt_len_parse(int argc, char *argv[])
@@ -693,14 +697,16 @@ int fxt_len_parse(int argc, char *argv[])
         int not_len_file = 1;
         n = 0;
         gzFile infp = xzopen(argv[i], "r");
-        // check if input file is .len file
         char buff[1024]; int buff_n;
-        buff_n = gzread(infp, buff, 10);
-        if (buff[0] != '>' && buff[0] != '@')
-            not_len_file = 0;
-        err_gzclose(infp);
-
-        infp  = xzopen(argv[i], "r");
+        // check if input file is .len file
+        if (strcmp(argv[i], "-") != 0) {
+            buff_n = gzread(infp, buff, 10);
+            if (buff[0] != '>' && buff[0] != '@')
+                not_len_file = 0;
+            err_gzclose(infp);
+            infp  = xzopen(argv[i], "r");
+        } else
+            not_len_file = 1;
         if (not_len_file) {
             kseq_t *seq;
             seq = kseq_init(infp);
@@ -986,6 +992,7 @@ int fxt_duplicate_fa(int argc, char *argv[])
 
 int fxt_error_parse(int argc, char *argv[])
 {
+    setlocale(LC_NUMERIC, "");
     int c, parse_non_primary = 0;
     while ((c = getopt(argc, argv, "s")) >= 0) {
         switch (c) {
@@ -1056,8 +1063,8 @@ int fxt_error_parse(int argc, char *argv[])
 
         fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
     }
-    fprintf(stdout, "%s\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\t%lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
-    fprintf(stdout, "Total mapped read: %lld (%.1f%%)\nTotal unmapped read: %lld\nTotal read: %lld\nError rate: %.1f%%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
+    fprintf(stdout, "%s\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
+    fprintf(stdout, "Total mapped read: %'lld (%.1f%%)\nTotal unmapped read: %'lld\nTotal read: %'lld\nError rate: %.1f%%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
     bam_destroy1(b); sam_close(in); bam_hdr_destroy(h);
     return 0;
 }
