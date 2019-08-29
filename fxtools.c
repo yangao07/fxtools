@@ -36,7 +36,8 @@ int usage(void)
     fprintf(stderr, "         length-parse (lp)     parse the length of sequences in fa/fq file.\n");
     fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in fasta/fastq file.\n");
     fprintf(stderr, "         merge-filter-fa (mff) merge and filter the reads with same read name in fasta file.\n");
-    fprintf(stderr, "         duplicate-fa (df)     duplicate the read sequence with specific copy number.\n");
+    fprintf(stderr, "         duplicate-seq (ds)    duplicate all the read sequences with specific copy number.\n");
+    fprintf(stderr, "         duplicate-read (dd)   duplicate all the read records with specific copy number.\n");
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
@@ -947,11 +948,55 @@ int fxt_merge_fa(int argc, char *argv[])
     return 0;
 }
 
-int fxt_duplicate_fa(int argc, char *argv[])
+int fxt_duplicate_read(int argc, char *argv[])
 {
     if (argc != 3) {
         fprintf(stderr, "\n");
-        fprintf(stderr, "Usage: fxtools duplicate-fa <in.fa/fq> <copy_number> > out.fa/fq\n");
+        fprintf(stderr, "Usage: fxtools duplicate-read <in.fa/fq> <copy_number> > out.fa/fq\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+    gzFile infp = xzopen(argv[1], "r"); float copy_n = atof(argv[2]);
+    kseq_t *seq = kseq_init(infp);
+    FILE *outfp = stdout;
+    size_t i; int j;
+
+    while (kseq_read(seq) >= 0)
+    {
+        if (seq->qual.l > 0) { // fastq
+            for (j = 0; j < copy_n; ++j) {
+                fprintf(outfp, "@%s_%d", seq->name.s, j);
+                if (seq->comment.l > 0) fprintf(outfp, " %s\n", seq->comment.s);
+                else fprintf(outfp, "\n");
+                for (i = 0; i < seq->seq.l; ++i) {
+                    fprintf(outfp, "%c", seq->seq.s[i]);
+                } fprintf(outfp, "\n");
+                fprintf(outfp, "+\n");
+                for (i = 0; i < seq->qual.l; ++i) {
+                    fprintf(outfp, "%c", seq->qual.s[i]);
+                } fprintf(outfp, "\n");
+            }
+        } else { // fasta
+            for (j = 0; j < copy_n; ++j) {
+                fprintf(outfp, ">%s_%d", seq->name.s, j);
+                if (seq->comment.l > 0) fprintf(outfp, " %s\n", seq->comment.s);
+                else fprintf(outfp, "\n");
+                for (i = 0; i < seq->seq.l; ++i) {
+                    fprintf(outfp, "%c", seq->seq.s[i]);
+                } fprintf(outfp, "\n");
+            }
+        }
+    }
+       
+    err_gzclose(infp);
+    err_fclose(outfp);
+    return 0;
+}
+int fxt_duplicate_seq(int argc, char *argv[])
+{
+    if (argc != 3) {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools duplicate-seq <in.fa/fq> <copy_number> > out.fa/fq\n");
         fprintf(stderr, "\n");
         exit(-1);
     }
@@ -980,7 +1025,6 @@ int fxt_duplicate_fa(int argc, char *argv[])
             for (i = 0; i < seq->seq.l * copy_n; ++i) {
                 fprintf(outfp, "%c", seq->seq.s[i % seq->seq.l]);
             } fprintf(outfp, "\n");
-
         }
     }
        
@@ -1332,7 +1376,8 @@ int main(int argc, char*argv[])
     else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-fa") == 0 || strcmp(argv[1], "mf") == 0) fxt_merge_fa(argc-1, argv+1);
     else if (strcmp(argv[1], "merge-filter-fa") == 0 || strcmp(argv[1], "mff") == 0) fxt_merge_filter_fa(argc-1, argv+1);
-    else if (strcmp(argv[1], "duplicate-fa") == 0 || strcmp(argv[1], "df") == 0) fxt_duplicate_fa(argc-1, argv+1);
+    else if (strcmp(argv[1], "duplicate-seq") == 0 || strcmp(argv[1], "ds") == 0) fxt_duplicate_seq(argc-1, argv+1);
+    else if (strcmp(argv[1], "duplicate-read") == 0 || strcmp(argv[1], "dd") == 0) fxt_duplicate_read(argc-1, argv+1);
     else if (strcmp(argv[1], "error-parse") == 0 || strcmp(argv[1], "ep") == 0) fxt_error_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "dna2rna") == 0 || strcmp(argv[1], "dr") == 0) fxt_dna2rna(argc-1, argv+1);
     else if (strcmp(argv[1], "rna2dna") == 0 || strcmp(argv[1], "rd") == 0) fxt_rna2dna(argc-1, argv+1);
