@@ -9,6 +9,7 @@
 #include <locale.h>
 #include "utils.h"
 #include "fxtools.h"
+#include "parse.h"
 #include "kseq.h"
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
@@ -38,7 +39,7 @@ int usage(void)
     fprintf(stderr, "         merge-filter-fa (mff) merge and filter the reads with same read name in fasta file.\n");
     fprintf(stderr, "         duplicate-seq (ds)    duplicate all the read sequences with specific copy number.\n");
     fprintf(stderr, "         duplicate-read (dd)   duplicate all the read records with specific copy number.\n");
-    fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in bam file.\n");
+    fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in SAM/BAM/GAF file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
     fprintf(stderr, "         trim (tr)             trim poly A tail(poly T head).\n");
@@ -68,17 +69,16 @@ void print_seq(FILE *out, kseq_t *seq)
     }
 }
 
-int _bam_cigar2qlen(int n_cigar, uint32_t *cigar) {
-    int i, len = 0, l, op;
-    for (i = 0; i < n_cigar; ++i) {
-        l = cigar[i] >> 4; 
-        op = cigar[i] & 0xf;
-        fprintf(stdout, "");
-
-        if (op != BAM_CDEL && op != BAM_CREF_SKIP)
-            len += l;
+// return 1 if filename has suffix of _suf_
+// else 0
+int check_suf(char *filename, char suf[]) {
+    int i;
+    int nl = strlen(filename), sl = strlen(suf);
+    if (nl < sl) return 0;
+    for (i = 0; i < sl; ++i) {
+        if (toupper(filename[nl-i-1]) != toupper(suf[sl-i-1])) return 0;
     }
-    return len;
+    return 1;
 }
 
 int fxt_filter(int argc, char* argv[])
@@ -654,7 +654,7 @@ int int_cmp(const void *a, const void *b) {
 
 void print_len_stats(char *fn, int *len, int n) {
     setlocale(LC_NUMERIC, "");
-    int i, min_len=INT32_MAX, max_len=INT32_MIN, n50_len=0; float mean_len;
+    int i, min_len=INT32_MAX, max_len=INT32_MIN, n50_len=0, mean_len = 0;
     long long tot_len = 0, n50_tot_len = 0;
 
     qsort(len, n, sizeof(int), int_cmp);
@@ -664,7 +664,7 @@ void print_len_stats(char *fn, int *len, int n) {
         if (len[i] < min_len) min_len = len[i];
     }
     if (n == 0) mean_len = 0;
-    else mean_len = tot_len / (n + 0.0);
+    else mean_len = tot_len / n;
 
     for (i = n-1; i >= 0; --i) {
         n50_tot_len += len[i];
@@ -676,7 +676,7 @@ void print_len_stats(char *fn, int *len, int n) {
     fprintf(stderr, "== \'%s\' read length stats ==\n", fn);
     fprintf(stderr, "Total reads\t%'16d\n", n);
     fprintf(stderr, "Total bases\t%'16lld\n", tot_len);
-    fprintf(stderr, "Mean length\t%'16.0f\n", mean_len);
+    fprintf(stderr, "Mean length\t%'16d\n", mean_len);
     fprintf(stderr, "Min. length\t%'16d\n", min_len);
     fprintf(stderr, "Max. length\t%'16d\n", max_len);
     fprintf(stderr, "N-50 length\t%'16d\n", n50_len);
@@ -1047,69 +1047,99 @@ int fxt_error_parse(int argc, char *argv[])
     if (argc - optind != 1)
     {
         fprintf(stderr, "\n"); 
-        fprintf(stderr, "Usage: fxtools error-parse <input.bam> [-s] > error.out\n");
+        fprintf(stderr, "Usage: fxtools error-parse <input.SAM/BAM/GAF> [-s] > error.out\n");
         fprintf(stderr, "         -s    include non-primary records in the output.\n\n");
         return 1;
     }
     fprintf(stdout, "READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
-    long long tol_n=0, unmap=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
+    char *qname;
+    long long tol_n=0, unmap=0, is_primary=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
     int i, seq_len, unmap_flag=0, md, ins, del, mis, match, clip, skip;
     int equal, diff;
 
-    samFile *in; bam_hdr_t *h; bam1_t *b;
-    if ((in = sam_open(argv[optind], "r")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
-    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[optind]);
-    b = bam_init1(); 
+    if (check_suf(argv[optind], ".sam") || check_suf(argv[optind], ".bam")) {
+        samFile *in; bam_hdr_t *h; bam1_t *b;
+        if ((in = sam_open(argv[optind], "r")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
+        if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[optind]);
+        b = bam_init1(); 
 
-    while (sam_read1(in, h, b) >= 0) {
-        if (!parse_non_primary && (b->core.flag & BAM_FSECONDARY || b->core.flag & BAM_FSUPPLEMENTARY)) continue;
-        tol_n++;
-        unmap_flag = 0;
-        md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
-        equal = 0, diff = 0;
-        if (!bam_unmap(b)) {
-            uint32_t *cigar = bam_get_cigar(b); int cigar_len = b->core.n_cigar;
-            for (i = 0; i < cigar_len; ++i) {
-                uint32_t c = cigar[i];
-                int len = bam_cigar_oplen(c);
-                switch (bam_cigar_op(c)) {
-                    case BAM_CMATCH: match += len; break;
-                    case BAM_CEQUAL: equal += len; break;
-                    case BAM_CDIFF: diff += len; break;
-                    case BAM_CINS: ins += len; break;
-                    case BAM_CDEL: del += len; break;
-                    case BAM_CREF_SKIP: skip += len; break;
-                    case BAM_CSOFT_CLIP: clip += len; break;
-                    case BAM_CHARD_CLIP: clip += len; break;
-                    default : err_fatal_simple("Cigar ERROR.\n");
-                }
-            }
-            seq_len = _bam_cigar2qlen(cigar_len, cigar);
-            if (equal == 0 && diff == 0) {
-                uint8_t *p = bam_aux_get(b, "NM");
-                if (p == 0) p = bam_aux_get(b, "nM");
-                if (p == 0) {
-                    err_fatal_core(__func__, "%s No \"NM\" tag.\n", bam_get_qname(b));
-                    return 0;
-                }
-                md = bam_aux2i(p);
-                mis = md - ins - del;
-                match = match - mis;
+        while (sam_read1(in, h, b) >= 0) {
+            if (!parse_non_primary && (b->core.flag & BAM_FSECONDARY || b->core.flag & BAM_FSUPPLEMENTARY)) continue;
+            tol_n++;
+            unmap_flag = 0;
+            md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+            equal = 0, diff = 0;
+            if (!bam_unmap(b)) {
+                uint32_t *cigar = bam_get_cigar(b); int cigar_len = b->core.n_cigar;
+                cigar_parse(b, cigar, cigar_len, &match, &mis, &ins, &del, &skip, &clip);
+                seq_len = _bam_cigar2qlen(cigar_len, cigar);
             } else {
-                mis = diff; match = equal;
+                unmap++;
+                unmap_flag = 1;
+                seq_len = b->core.l_qseq;
             }
-        } else {
-            unmap++;
-            unmap_flag = 1;
-            seq_len = b->core.l_qseq;
-        }
-        tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
+            tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
 
-        fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
+            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
+        }
+        bam_destroy1(b); sam_close(in); bam_hdr_destroy(h);
+    } else if (check_suf(argv[optind], ".gaf") || check_suf(argv[optind], ".gaf.gz")) {
+        gzFile gaf_fp = err_xzopen_core(__func__, argv[optind], "r"); kstream_t *ks = ks_init(gaf_fp);
+        kstring_t line = {0,0,0}; int dret;
+        while (ks_getuntil(ks, KS_SEP_LINE, &line, &dret) >= 0) {
+            unmap_flag = 0; is_primary = 0;
+            md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+            // GAF: 
+            //  0:qname, 1:qlen, 2:qs, 3: qe, 4:+/-, 5:path, 6:plen, 7:ps, 8:pe, 9:n_match, 10:n_aln, 11:mapq
+            int l_aux, m_aux=0; uint8_t *aux=0, *info;
+            char *deli_s, *info_s, *aux_s; int is_ok = 0;
+            for (i = 0, deli_s = info_s = line.s;; ++deli_s) {
+                if (*deli_s == 0 || *deli_s == '\t') {
+                    int c = *deli_s;
+                    *deli_s = 0;
+                    if (i == 0) {
+                        qname = info_s;
+                    } else if (i == 1) {
+                        seq_len = _strtol10(info_s, NULL);
+                    } else if (i == 5) { // path
+                        if (info_s[0] == '*') { // unmaped
+                            unmap++;
+                            unmap_flag = 1;
+                            break;
+                        }
+                    } else if (i == 11) {
+                        is_ok = 1; aux_s = deli_s + 1;
+                        break;
+                    }
+                    if (c == 0) break;
+                    ++i, info_s = deli_s + 1;
+                }
+            }
+            if (is_ok) {
+                l_aux = aux_parse(aux_s, &aux, &m_aux);
+                info = aux_get(l_aux, aux, "tp");
+                if (info == 0 || info[0] != 'A') err_fatal(__func__, "Error: no \"tp\" tag in line\n%s", line.s);
+                if (!parse_non_primary && info[1] != 'P') continue;
+                l_aux = aux_del(l_aux, aux, info);
+
+                info = aux_get(l_aux, aux, "cg");
+                if (info == 0 || info[0] != 'Z') err_fatal(__func__, "Error: no \"cg\" tag in line\n%s", line.s);
+                char *cigar_str = (char*)info+1;
+                cigar_str_parse(cigar_str, &match, &mis, &ins, &del, &skip, &clip);
+                l_aux = aux_del(l_aux, aux, info);
+                if (aux) free(aux);
+            }
+            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", qname, seq_len, unmap_flag, ins, del, mis, match, clip, skip);
+            tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
+            tol_n++;
+        }
+        ks_destroy(ks); err_gzclose(gaf_fp); if (line.m) free(line.s);
+    } else {
+        err_fatal(__func__, "Unexpected file format: %s\n", argv[optind]);
     }
+
     fprintf(stdout, "%s\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
     fprintf(stdout, "Total mapped read: %'lld (%.1f%%)\nTotal unmapped read: %'lld\nTotal read: %'lld\nError rate: %.1f%%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
-    bam_destroy1(b); sam_close(in); bam_hdr_destroy(h);
     return 0;
 }
 

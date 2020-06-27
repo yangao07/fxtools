@@ -6,6 +6,9 @@ HTSLIB  =   $(HTSLIB_DIR)/libhts.a
 LIB     =	$(HTSLIB) -lm -lz -lpthread
 INCLUDE = -I ./htslib
 
+ifneq ($(gdb),)
+	CFLAGS  =	-g -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
+endif
 
 BIN_DIR =	.
 SRC_DIR =   .
