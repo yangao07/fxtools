@@ -1051,7 +1051,7 @@ int fxt_error_parse(int argc, char *argv[])
         fprintf(stderr, "         -s    include non-primary records in the output.\n\n");
         return 1;
     }
-    fprintf(stdout, "READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\n");
+    fprintf(stdout, "#READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\tERR_RATE\n");
     char *qname;
     long long tol_n=0, unmap=0, is_primary=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
     int i, seq_len, unmap_flag=0, md, ins, del, mis, match, clip, skip;
@@ -1080,7 +1080,7 @@ int fxt_error_parse(int argc, char *argv[])
             }
             tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
 
-            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip);
+            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f%%\n", bam_get_qname(b), seq_len, unmap_flag, ins, del, mis, match, clip, skip, (ins+mis+del+0.1)/(match+ins+mis)*100);
         }
         bam_destroy1(b); sam_close(in); bam_hdr_destroy(h);
     } else if (check_suf(argv[optind], ".gaf") || check_suf(argv[optind], ".gaf.gz")) {
@@ -1129,7 +1129,7 @@ int fxt_error_parse(int argc, char *argv[])
                 l_aux = aux_del(l_aux, aux, info);
                 if (aux) free(aux);
             }
-            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", qname, seq_len, unmap_flag, ins, del, mis, match, clip, skip);
+            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f%%\n", qname, seq_len, unmap_flag, ins, del, mis, match, clip, skip, (0.0+ins+del+mis)/(match+ins+mis)*100);
             tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
             tol_n++;
         }
@@ -1138,8 +1138,8 @@ int fxt_error_parse(int argc, char *argv[])
         err_fatal(__func__, "Unexpected file format: %s\n", argv[optind]);
     }
 
-    fprintf(stdout, "%s\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\n", "Total", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip);
-    fprintf(stdout, "Total mapped read: %'lld (%.1f%%)\nTotal unmapped read: %'lld\nTotal read: %'lld\nError rate: %.1f%%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
+    fprintf(stdout, "%s\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%'lld\t%.1f%%\n", "#TOTAL", tol_len, unmap, tol_ins, tol_del, tol_mis, tol_match, tol_clip, tol_skip, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis)*100);
+    fprintf(stdout, "#Total mapped read: %'lld (%.1f%%)\n#Total unmapped read: %'lld\n#Total read: %'lld\n#Error rate: %.1f%%\n", tol_n-unmap, (tol_n-unmap+0.0)/ tol_n * 100, unmap, tol_n, (tol_ins+tol_del+tol_mis+0.0)/(tol_match+tol_ins+tol_mis) * 100); // no tol_del
     return 0;
 }
 

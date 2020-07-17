@@ -136,8 +136,6 @@ int _bam_cigar2qlen(int n_cigar, uint32_t *cigar) {
     for (i = 0; i < n_cigar; ++i) {
         l = cigar[i] >> 4; 
         op = cigar[i] & 0xf;
-        fprintf(stdout, "");
-
         if (op != BAM_CDEL && op != BAM_CREF_SKIP)
             len += l;
     }
