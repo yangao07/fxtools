@@ -171,6 +171,7 @@ int cigar_str_parse(char *cigar_str, int *match, int *mis, int *ins, int *del, i
 
 int cigar_parse(bam1_t *b, uint32_t *cigar, int cigar_len, int *match, int *mis, int *ins, int *del, int *skip, int *clip) {
     int i, md, equal = 0, diff = 0;
+    int max_len = 50;
     *match = *mis = *ins = *del = *skip = *clip = 0;
     for (i = 0; i < cigar_len; ++i) {
         uint32_t c = cigar[i];
@@ -179,8 +180,8 @@ int cigar_parse(bam1_t *b, uint32_t *cigar, int cigar_len, int *match, int *mis,
             case BAM_CMATCH: *match += len; break;
             case BAM_CEQUAL: equal += len; break;
             case BAM_CDIFF: diff += len; break;
-            case BAM_CINS: *ins += len; break;
-            case BAM_CDEL: *del += len; break;
+            case BAM_CINS: if (len <= max_len) *ins += len; break;
+            case BAM_CDEL: if (len <= max_len) *del += len; break;
             case BAM_CREF_SKIP: *skip += len; break;
             case BAM_CSOFT_CLIP: *clip += len; break;
             case BAM_CHARD_CLIP: *clip += len; break;
