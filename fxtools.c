@@ -1047,7 +1047,7 @@ int fxt_error_parse(int argc, char *argv[])
     if (argc - optind != 1)
     {
         fprintf(stderr, "\n"); 
-        fprintf(stderr, "Usage: fxtools error-parse <input.SAM/BAM/GAF> [-s] > error.out\n");
+        fprintf(stderr, "Usage: fxtools error-parse <input.SAM/BAM/PAF/GAF> [-s] > error.out\n");
         fprintf(stderr, "         -s    include non-primary records in the output.\n\n");
         return 1;
     }
@@ -1134,6 +1134,57 @@ int fxt_error_parse(int argc, char *argv[])
             tol_n++;
         }
         ks_destroy(ks); err_gzclose(gaf_fp); if (line.m) free(line.s);
+    } else if (check_suf(argv[optind], ".paf") || check_suf(argv[optind], ".paf.gz")) {
+        gzFile paf_fp = err_xzopen_core(__func__, argv[optind], "r"); kstream_t *ks = ks_init(paf_fp);
+        kstring_t line = {0,0,0}; int dret;
+        while (ks_getuntil(ks, KS_SEP_LINE, &line, &dret) >= 0) {
+            unmap_flag = 0; is_primary = 0;
+            md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+            // PAF: 
+            //  0:qname, 1:qlen, 2:qs(0), 3: qe(0), 4:+/-, 5:tname, 6:tlen, 7:ts, 8:te, 9:n_match, 10:n_aln, 11:mapq
+            int l_aux, m_aux=0; uint8_t *aux=0, *info;
+            char *deli_s, *info_s, *aux_s; int is_ok = 0;
+            for (i = 0, deli_s = info_s = line.s;; ++deli_s) {
+                if (*deli_s == 0 || *deli_s == '\t') {
+                    int c = *deli_s;
+                    *deli_s = 0;
+                    if (i == 0) {
+                        qname = info_s;
+                    } else if (i == 1) {
+                        seq_len = _strtol10(info_s, NULL);
+                    } else if (i == 5) { // path
+                        if (info_s[0] == '*') { // unmaped
+                            unmap++;
+                            unmap_flag = 1;
+                            break;
+                        }
+                    } else if (i == 11) {
+                        is_ok = 1; aux_s = deli_s + 1;
+                        break;
+                    }
+                    if (c == 0) break;
+                    ++i, info_s = deli_s + 1;
+                }
+            }
+            if (is_ok) {
+                l_aux = aux_parse(aux_s, &aux, &m_aux);
+                info = aux_get(l_aux, aux, "tp");
+                if (info == 0 || info[0] != 'A') err_fatal(__func__, "Error: no \"tp\" tag in line\n%s", line.s);
+                if (!parse_non_primary && info[1] != 'P') continue;
+                l_aux = aux_del(l_aux, aux, info);
+
+                info = aux_get(l_aux, aux, "cg");
+                if (info == 0 || info[0] != 'Z') err_fatal(__func__, "Error: no \"cg\" tag in line\n%s", line.s);
+                char *cigar_str = (char*)info+1;
+                cigar_str_parse(cigar_str, &match, &mis, &ins, &del, &skip, &clip);
+                l_aux = aux_del(l_aux, aux, info);
+                if (aux) free(aux);
+            }
+            fprintf(stdout, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f%%\n", qname, seq_len, unmap_flag, ins, del, mis, match, clip, skip, (0.0+ins+del+mis)/(match+ins+mis)*100);
+            tol_len += seq_len; tol_ins += ins; tol_del += del; tol_mis += mis; tol_match += match; tol_clip += clip; tol_skip += skip;
+            tol_n++;
+        }
+        ks_destroy(ks); err_gzclose(paf_fp); if (line.m) free(line.s);
     } else {
         err_fatal(__func__, "Unexpected file format: %s\n", argv[optind]);
     }
