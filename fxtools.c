@@ -355,11 +355,9 @@ int fxt_split_fx(int argc, char *argv[])
     int read_i = 0; FILE *fp;
     while (kseq_read(seq) >= 0) {
         fp = outfp[read_i % n_files];
-        print_seq(fp, seq);
-        // fprintf(fp, ">%s", seq->name.s);
-        // if (seq->comment.l > 0) fprintf(fp, " %s", seq->comment.s);
-        // fprintf(fp, "\n");
-        // fprintf(fp, "%s\n", seq->seq.s);
+        // print_seq(fp, seq);
+        fprintf(fp, ">%s\n", seq->name.s);
+        fprintf(fp, "%s\n", seq->seq.s);
         read_i++;
     }
 
@@ -1173,10 +1171,20 @@ int fxt_error_parse(int argc, char *argv[])
                 if (!parse_non_primary && info[1] != 'P') continue;
                 l_aux = aux_del(l_aux, aux, info);
 
+                int32_t NM = -1;
+                if ((info = aux_get(l_aux, aux, "NM"))) {
+                    if (info[0] != 'i') err_fatal(__func__, "Error in \"NM\" tag in line\n%s", line.s);
+                    NM = *(int32_t*)(info+1);
+                }
+
                 info = aux_get(l_aux, aux, "cg");
                 if (info == 0 || info[0] != 'Z') err_fatal(__func__, "Error: no \"cg\" tag in line\n%s", line.s);
                 char *cigar_str = (char*)info+1;
                 cigar_str_parse(cigar_str, &match, &mis, &ins, &del, &skip, &clip);
+                if (ins+del+mis != NM) {
+                    mis = NM - ins -del;
+                    match -= mis;
+                }
                 l_aux = aux_del(l_aux, aux, info);
                 if (aux) free(aux);
             }

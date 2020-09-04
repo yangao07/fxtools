@@ -36,7 +36,7 @@ static unsigned long int _strtoul10(const char *str, char **endptr) {
 }
 
 #define __skip_tag(s) do { \
-		int type = toupper(*(s)); \
+		int type = *(s); \
 		++(s); \
 		if (type == 'Z') { while (*(s)) ++(s); ++(s); } \
 		else if (type == 'B') (s) += 5 + aux_type2size(*(s)) * (*(int32_t*)((s)+1)); \
@@ -97,7 +97,7 @@ int aux_parse(char *s, uint8_t **data, int *max)
 				} else if (type == 'f') {
 					float x;
 					x = strtod(q, &q);
-					kputc_('f', &str); kputsn_(&x, 4, &str);
+					kputc_('f', &str); kputsn_((char*)&x, 4, &str);
 				} else if (type == 'Z') {
 					kputc_('Z', &str); kputsn_(q, p - q + 1, &str); // note that this include the trailing NULL
 				} else if (type == 'B') {
