@@ -355,9 +355,9 @@ int fxt_split_fx(int argc, char *argv[])
     int read_i = 0; FILE *fp;
     while (kseq_read(seq) >= 0) {
         fp = outfp[read_i % n_files];
-        // print_seq(fp, seq);
-        fprintf(fp, ">%s\n", seq->name.s);
-        fprintf(fp, "%s\n", seq->seq.s);
+        print_seq(fp, seq);
+        // fprintf(fp, ">%s\n", seq->name.s);
+        // fprintf(fp, "%s\n", seq->seq.s);
         read_i++;
     }
 
