@@ -104,6 +104,7 @@ int fxt_filter(int argc, char* argv[])
     }
 
     err_fclose(out);
+    kseq_destroy(seq);
     err_gzclose(infp);
     return 0;
 }
@@ -235,6 +236,7 @@ int fxt_filter_name(int argc, char* argv[])
     }
 
     err_fclose(out);
+    kseq_destroy(seq);
     err_gzclose(infp);
     return 0;
 }
@@ -365,6 +367,7 @@ int fxt_split_fx(int argc, char *argv[])
         fclose(outfp[i]);
     } free(outfp);
     err_gzclose(infp);
+    kseq_destroy(seq);
     return 0;
 }
 
@@ -390,6 +393,7 @@ int fxt_fq2fa(int argc, char *argv[])
     }
 
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -416,11 +420,12 @@ int fxt_fa2fq(int argc, char *argv[])
 
         fprintf(outfp, "%s\n", seq->seq.s);
         fprintf(outfp, "+\n");
-        for (i = 0; i < (int64_t)seq->seq.l; ++i) fprintf(outfp, "!");
+        for (i = 0; i < (int64_t)seq->seq.l; ++i) fprintf(outfp, "I");
         fprintf(outfp, "\n");
     }
 
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -508,6 +513,7 @@ int fxt_dna2rna(int argc, char *argv[])
     }
 
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -539,6 +545,7 @@ int fxt_rna2dna(int argc, char *argv[])
     }
 
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -718,6 +725,7 @@ int fxt_len_parse(int argc, char *argv[])
                 }
                 len[n++] = seq->seq.l;
             }
+            kseq_destroy(seq);
         } else { // is .len file
             int seq_len;
             while (gzgets(infp, buff, 1024) != NULL) {
@@ -868,6 +876,7 @@ int fxt_merge_filter_fa(int argc, char *argv[])
         }
         fprintf(outfp, "\n");
     }
+    kseq_destroy(seq);
     free(name); free(len); free(tmp); err_gzclose(infp); err_fclose(outfp);
     return 0;
 }
@@ -942,6 +951,7 @@ int fxt_merge_fa(int argc, char *argv[])
         }
     }
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -987,6 +997,7 @@ int fxt_duplicate_read(int argc, char *argv[])
     }
        
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -1027,6 +1038,7 @@ int fxt_duplicate_seq(int argc, char *argv[])
     }
        
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
@@ -1327,51 +1339,64 @@ int fxt_sam_flag(int argc, char *argv[]) {
 
 // trim polyA tail or polyT tail
 int fxt_trim(int argc, char *argv[]) {
-    if (argc != 5) {
-        err_printf("Usage: fxtools trim in.fa/fq min_trim_length min_fraction window_size > out.fa\n");
+    if (argc != 6) {
+        err_printf("Usage: fxtools trim in.fa/fq min_trim_length min_fraction window_size lead_nonA_len > out.fa\n");
         err_printf("\n");
         return 0;
     }
     gzFile infp = xzopen(argv[1], "r");
-    size_t min_len = atoi(argv[2]), win_size = atoi(argv[4]);
+    size_t min_len = atoi(argv[2]), win_size = atoi(argv[4]), lead_nonA_len = atoi(argv[5]);
     float min_frac = atof(argv[3]);
     kseq_t *seq;
     seq = kseq_init(infp);
     FILE *outfp = stdout;
 
-    size_t i,j, trim_s, trim_e;
+    int i, j, l, trim_s, trim_e;
     while (kseq_read(seq) >= 0)
     {
         trim_s = 0; trim_e = seq->seq.l-1;
-        // polyT head
-        for (i = 0; i < seq->seq.l - win_size + 1; ++i) {
-            int T_n = 0;
-            for (j = i; j < i+win_size; ++j) {
-                if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u')
-                    T_n++;
-            }
-            if (T_n / (win_size + 0.0) >= min_frac) {
-                if (seq->seq.s[j-1] == 'T' || seq->seq.s[j-1] == 'U' || seq->seq.s[j-1] == 't' || seq->seq.s[j-1] == 'u')
-                    trim_s = i + win_size;
-            } else break;
-        }
-        if (trim_s < min_len) trim_s = 0;
-        if (trim_s == 0) {
-            for (i = seq->seq.l - 1; i >= win_size - 1; --i) {
-                int A_n = 0;
-                for (j = i; j >= i-win_size+1; --j) {
-                    if (seq->seq.s[j] == 'A' || seq->seq.s[j] == 'a')
-                        A_n++;
+        for (l = 0; l <= lead_nonA_len; ++l) {
+            // polyT head
+            for (i = l; i < seq->seq.l - win_size + 1; ++i) {
+                int T_n = 0;
+                for (j = i; j < i+win_size; ++j) {
+                    if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u')
+                        T_n++;
                 }
-                if (A_n / (win_size + 0.0) >= min_frac) {
-                    if (seq->seq.s[j+1]=='A' || seq->seq.s[j+1]=='a')
-                        trim_e = i - win_size;
+                if (T_n / (win_size + 0.0) >= min_frac) {
+                    // select the last 'T/U' in window
+                    for (j = i+win_size-1; j >= i; --j) {
+                        if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u') { 
+                            trim_s = j+1;
+                            break;
+                        }
+                    }
                 } else break;
             }
-            if (seq->seq.l-1 - trim_e < min_len) trim_e = seq->seq.l-1;
+            if (trim_s < min_len) {
+                for (i = seq->seq.l - l - 1; i >= win_size - 1; --i) {
+                    int A_n = 0;
+                    for (j = i; j >= i-win_size+1; --j) {
+                        if (seq->seq.s[j] == 'A' || seq->seq.s[j] == 'a')
+                            A_n++;
+                    }
+                    if (A_n / (win_size + 0.0) >= min_frac) {
+                        // select the first 'A' in window
+                        for (j = i-win_size+1; j <= i; ++j) {
+                            if (seq->seq.s[j]=='A' || seq->seq.s[j]=='a') {
+                                trim_e = j-1;
+                                break;
+                            }
+                        }
+                    } else break;
+                }
+                if (seq->seq.l-1 - trim_e < min_len) trim_e = seq->seq.l-1;
+            }
+            if (trim_s > 0 || trim_e < seq->seq.l-1) break;
         }
 
-        fprintf(outfp, ">%s_trim:%ld_%ld", seq->name.s, trim_s, trim_e);
+        if (trim_s == 0 && trim_e == seq->seq.l-1) fprintf(outfp, ">%s", seq->name.s);
+        else fprintf(outfp, ">%s_trim:%d_%d", seq->name.s, trim_s+1, trim_e+1);
         if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
         fprintf(outfp, "\n");
 
@@ -1382,57 +1407,70 @@ int fxt_trim(int argc, char *argv[]) {
     }
 
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
 
-// trim polyA tail or polyT tail
+// trim polyA tail or polyT head
 int fxt_trimF(int argc, char *argv[]) {
-    if (argc != 5) {
-        err_printf("Usage: fxtools trimF in.fa/fq min_trim_length min_fraction window_size > out.fa\n");
+    if (argc != 6) {
+        err_printf("Usage: fxtools trimF in.fa/fq min_trim_length min_fraction window_size lead_nonA_len > out.fa\n");
         err_printf("\n");
         return 0;
     }
     gzFile infp = xzopen(argv[1], "r");
-    size_t min_len = atoi(argv[2]), win_size = atoi(argv[4]);
+    size_t min_len = atoi(argv[2]), win_size = atoi(argv[4]), lead_nonA_len = atoi(argv[5]);
     float min_frac = atof(argv[3]);
     kseq_t *seq;
     seq = kseq_init(infp);
     FILE *outfp = stdout;
 
-    size_t i,j, trim_s, trim_e;
+    size_t i, j, l, trim_s, trim_e;
     while (kseq_read(seq) >= 0)
     {
         trim_s = 0; trim_e = seq->seq.l-1;
         // polyT head
-        for (i = 0; i < seq->seq.l - win_size + 1; ++i) {
-            int T_n = 0;
-            for (j = i; j < i+win_size; ++j) {
-                if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u')
-                    T_n++;
-            }
-            if (T_n / (win_size + 0.0) >= min_frac) {
-                if (seq->seq.s[j-1] == 'T' || seq->seq.s[j-1] == 'U' || seq->seq.s[j-1] == 't' || seq->seq.s[j-1] == 'u')
-                    trim_s = i + win_size;
-            } else break;
-        }
-        if (trim_s < min_len) trim_s = 0;
-        if (trim_s == 0) {
-            for (i = seq->seq.l - 1; i >= win_size - 1; --i) {
-                int A_n = 0;
-                for (j = i; j >= i-win_size+1; --j) {
-                    if (seq->seq.s[j] == 'A' || seq->seq.s[j] == 'a')
-                        A_n++;
+        for (l = 0; l <= lead_nonA_len; ++l) {
+            for (i = l; i < seq->seq.l - win_size + 1; ++i) {
+                int T_n = 0;
+                for (j = i; j < i+win_size; ++j) {
+                    if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u')
+                        T_n++;
                 }
-                if (A_n / (win_size + 0.0) >= min_frac) {
-                    if (seq->seq.s[j+1]=='A' || seq->seq.s[j+1]=='a')
-                        trim_e = i - win_size;
+                if (T_n / (win_size + 0.0) >= min_frac) {
+                    // select the last 'T/U' in window
+                    for (j = i+win_size-1; j >= i; --j) {
+                        if (seq->seq.s[j] == 'T' || seq->seq.s[j] == 'U' || seq->seq.s[j] == 't' || seq->seq.s[j] == 'u') {
+                            trim_s = j+1;
+                            break;
+                        }
+                    }
                 } else break;
             }
-            if (seq->seq.l-1 - trim_e < min_len) trim_e = seq->seq.l-1;
+            if (trim_s < min_len) {
+                for (i = seq->seq.l - l - 1; i >= win_size - 1; --i) {
+                    int A_n = 0;
+                    for (j = i; j >= i-win_size+1; --j) {
+                        if (seq->seq.s[j] == 'A' || seq->seq.s[j] == 'a')
+                            A_n++;
+                    }
+                    if (A_n / (win_size + 0.0) >= min_frac) {
+                        // select the first 'A' in window
+                        for (j = i-win_size+1; j <= i; ++j) {
+                            if (seq->seq.s[j]=='A' || seq->seq.s[j]=='a') {
+                                trim_e = j-1;
+                                break;
+                            }
+                        }
+                    } else break;
+                }
+                if (seq->seq.l-1 - trim_e < min_len) trim_e = seq->seq.l-1;
+            }
+            if (trim_s > 0 || trim_e < seq->seq.l-1) break;
         }
-        if (trim_s != 0 || trim_e != seq->seq.l-1) {
-            fprintf(outfp, ">%s_trim:%ld_%ld", seq->name.s, trim_s, trim_e);
+        if (trim_s > 0 || trim_e < seq->seq.l-1) {
+            fprintf(outfp, ">%s_trim:%ld_%ld", seq->name.s, trim_s+1, trim_e+1);
             if (seq->comment.l > 0) fprintf(outfp, " %s", seq->comment.s);
             fprintf(outfp, "\n");
 
@@ -1444,6 +1482,7 @@ int fxt_trimF(int argc, char *argv[]) {
     }
 
     err_gzclose(infp);
+    kseq_destroy(seq);
     err_fclose(outfp);
     return 0;
 }
