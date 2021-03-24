@@ -184,7 +184,7 @@ int fxt_filter_name(int argc, char* argv[])
                     name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
                 name_m = name_n << 1;
             }
-            strcpy(name_array[name_n++], strtok(line, " "));
+            strcpy(name_array[name_n++], strtok(line, " \t"));
         }
 
         err_fclose(fp);
