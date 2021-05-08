@@ -578,10 +578,11 @@ int fxt_seq_dis(int argc, char *argv[])
         exit(-1);
     }
     faidx_t *fai = fai_load(argv[1]);
+    char fai_fn[1024];
     if ( !fai ) {
         fprintf(stderr, "Could not load fai index of %s\n", argv[1]);
         fprintf(stderr, "Building fai index of %s\n", argv[1]);
-        if (fai_build(argv[1]) != 0) {
+        if (fai_build3(argv[1], fai_fn, NULL) != 0) {
             fprintf(stderr, "Could not build fai index %s.fai\n", argv[1]);
             return EXIT_FAILURE;
         }

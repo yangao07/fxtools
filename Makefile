@@ -48,3 +48,5 @@ clean:
 
 clean_debug:
 		rm -f $(SRC_DIR)/*.o $(GDB_DEBUG) $(NOR_DEBUG)
+
+fxtools.o: fxtools.c fxtools.h
