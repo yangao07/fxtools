@@ -25,6 +25,7 @@ int usage(void)
     fprintf(stderr, "Command: \n");
     fprintf(stderr, "         filter (fl)           filter fa/fq sequences with specified length boundary.\n");
     fprintf(stderr, "         filter-name (fn)      filter fa/fq sequences with specified name.\n");
+    fprintf(stderr, "         filter-qual (fq)      filter fq sequences with specified min. average quality.\n");
     fprintf(stderr, "         filter-bam (fb)       filter bam/sam records with specified read length boundary.\n");
     fprintf(stderr, "         filter-bam-name (fbn) filter bam/sam records with specified read name.\n");
     fprintf(stderr, "         split-fx (sx)         split fa/fq file into multipule files.\n");
@@ -48,8 +49,7 @@ int usage(void)
     return 1;
 }
 
-void print_seq(FILE *out, kseq_t *seq)
-{
+void print_seq(FILE *out, kseq_t *seq) {
     if (seq->seq.l == 0) return;
     if (seq->qual.l != 0)
     {
@@ -81,8 +81,7 @@ int check_suf(char *filename, char suf[]) {
     return 1;
 }
 
-int fxt_filter(int argc, char* argv[])
-{
+int fxt_filter(int argc, char* argv[]) {
     if (argc != 4) 
     {
         fprintf(stderr, "\n");
@@ -109,8 +108,7 @@ int fxt_filter(int argc, char* argv[])
     return 0;
 }
 
-int fxt_filter_bam(int argc, char *argv[])
-{
+int fxt_filter_bam(int argc, char *argv[]) {
     if (argc != 4) 
     {
         fprintf(stderr, "\n");
@@ -138,8 +136,7 @@ int fxt_filter_bam(int argc, char *argv[])
     return 0;
 }
 
-int fxt_filter_name(int argc, char* argv[])
-{
+int fxt_filter_name(int argc, char* argv[]) {
     int c, n=0, m=0, input_list=0; char name[1024], sub_name[1024];
     while ((c = getopt(argc, argv, "n:m:l")) >= 0) {
         switch (c) {
@@ -149,8 +146,7 @@ int fxt_filter_name(int argc, char* argv[])
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
         }
     }
-    if (n + m != 1 || argc - optind != 1) 
-    {
+    if (n + m != 1 || argc - optind != 1) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools filter-name [-n name] [-m sub-name] [-l] <in.fa/fq> > <out.fa/fq>\n");
         fprintf(stderr, "      -n [STR]    only output read with specified name.\n");
@@ -241,8 +237,42 @@ int fxt_filter_name(int argc, char* argv[])
     return 0;
 }
 
-int fxt_filter_bam_name(int argc, char *argv[])
-{
+int fxt_filter_qual(int argc, char* argv[]) {
+    int q_offset=33, c; 
+    while ((c = getopt(argc, argv, "6")) >= 0) {
+        switch (c) {
+            case '6': q_offset=64; break;
+            default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
+        }
+    }
+    if (argc - optind != 2) 
+    {
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Usage: fxtools filter-qual <in.fa/fq> <min_qual> > <out.fa/fq>\n");
+        fprintf(stderr, "      -6          quality value offset is 64. Default is 33. [False]\n");
+        fprintf(stderr, "\n");
+        exit(-1);
+    }
+    gzFile infp = xzopen(argv[optind], "r"); float min_q = atof(argv[optind+1]);
+    FILE *out = stdout;
+    kseq_t *seq = kseq_init(infp);
+
+    size_t i;
+    while (kseq_read(seq) >= 0) {
+        float sum_q = 0;
+        for (i = 0; i < seq->qual.l; ++i) {
+            sum_q += (int)seq->qual.s[i] - q_offset;
+        }
+        if (sum_q >= min_q * seq->qual.l) print_seq(out, seq); 
+    }
+
+    err_fclose(out);
+    kseq_destroy(seq);
+    err_gzclose(infp);
+    return 0;
+}
+
+int fxt_filter_bam_name(int argc, char *argv[]) {
     int c, n=0, m=0, input_list=0; char name[1024], sub_name[1024];
     while ((c = getopt(argc, argv, "n:m:l")) >= 0) {
         switch (c) {
@@ -337,8 +367,7 @@ int fxt_filter_bam_name(int argc, char *argv[])
     return 0;
 }
 
-int fxt_split_fx(int argc, char *argv[])
-{
+int fxt_split_fx(int argc, char *argv[]) {
     int i;
     if (argc != 4) {
         err_printf("\nUsage: fxtools split-fx <in.fa/q> <N> <out_dir>\n\n");
@@ -371,8 +400,7 @@ int fxt_split_fx(int argc, char *argv[])
     return 0;
 }
 
-int fxt_fq2fa(int argc, char *argv[])
-{
+int fxt_fq2fa(int argc, char *argv[]) {
     if (argc != 2)
     {
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fq2fa <in.fq> > <out.fa>\n\n");
@@ -398,8 +426,7 @@ int fxt_fq2fa(int argc, char *argv[])
     return 0;
 }
 
-int fxt_fa2fq(int argc, char *argv[])
-{
+int fxt_fa2fq(int argc, char *argv[]) {
     if (argc != 2)
     {
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools fa2fq <in.fa> > <out.fq>\n\n");
@@ -430,8 +457,7 @@ int fxt_fa2fq(int argc, char *argv[])
     return 0;
 }
 
-int fxt_re_co(int argc, char *argv[])
-{
+int fxt_re_co(int argc, char *argv[]) {
     if (argc != 2)
     {
         fprintf(stderr, "\n");
@@ -503,8 +529,7 @@ int fxt_re_co(int argc, char *argv[])
     return 0;
 }
 
-int fxt_dna2rna(int argc, char *argv[])
-{
+int fxt_dna2rna(int argc, char *argv[]) {
     if (argc != 2)
     {
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools dna2rna <in.fa/fq> > <out.fa/fq>\n\n");
@@ -535,8 +560,7 @@ int fxt_dna2rna(int argc, char *argv[])
     return 0;
 }
 
-int fxt_rna2dna(int argc, char *argv[])
-{
+int fxt_rna2dna(int argc, char *argv[]) {
     if (argc != 2)
     {
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools rna2dna <in.fa/fq> > <out.fa/fq>\n\n");
@@ -567,8 +591,7 @@ int fxt_rna2dna(int argc, char *argv[])
     return 0;
 }
 
-int fxt_seq_dis(int argc, char *argv[])
-{
+int fxt_seq_dis(int argc, char *argv[]) {
     if (argc != 5)
     {
         fprintf(stderr, "\n");
@@ -619,8 +642,7 @@ int fxt_seq_dis(int argc, char *argv[])
     return exit_status;
 }
 
-int fxt_cigar_parse(int argc, char *argv[])
-{
+int fxt_cigar_parse(int argc, char *argv[]) {
     if (argc != 2)
     {
         fprintf(stderr, "\n"); fprintf(stderr, "Usage: fxtools cigar-parse <input-cigar>\n\n");
@@ -705,8 +727,7 @@ void print_len_stats(char *fn, int *len, int n) {
     fprintf(stderr, "N-50 length\t%'16d\n", n50_len);
 }
 
-int fxt_len_parse(int argc, char *argv[])
-{
+int fxt_len_parse(int argc, char *argv[]) {
     if (argc < 2)
     {
         fprintf(stderr, "\n");
@@ -762,8 +783,7 @@ int fxt_len_parse(int argc, char *argv[])
     return 0;
 }
 
-int fxt_merge_filter_fa(int argc, char *argv[])
-{
+int fxt_merge_filter_fa(int argc, char *argv[]) {
     if (argc != 2 && argc != 3) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools merge-fil-fa <in.fa> [N] > <out.fa/fq>\n");
@@ -899,8 +919,7 @@ int fxt_merge_filter_fa(int argc, char *argv[])
     return 0;
 }
 
-int fxt_merge_fa(int argc, char *argv[])
-{
+int fxt_merge_fa(int argc, char *argv[]) {
     if (argc != 2 && argc != 3) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools merge-fa <in.fa/fq> [N] > <out.fa/fq>\n");
@@ -974,8 +993,7 @@ int fxt_merge_fa(int argc, char *argv[])
     return 0;
 }
 
-int fxt_duplicate_read(int argc, char *argv[])
-{
+int fxt_duplicate_read(int argc, char *argv[]) {
     if (argc != 3) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools duplicate-read <in.fa/fq> <copy_number> > out.fa/fq\n");
@@ -1019,8 +1037,7 @@ int fxt_duplicate_read(int argc, char *argv[])
     err_fclose(outfp);
     return 0;
 }
-int fxt_duplicate_seq(int argc, char *argv[])
-{
+int fxt_duplicate_seq(int argc, char *argv[]) {
     if (argc != 3) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools duplicate-seq <in.fa/fq> <copy_number> > out.fa/fq\n");
@@ -1062,8 +1079,7 @@ int fxt_duplicate_seq(int argc, char *argv[])
 }
 #define bam_unmap(b) ((b)->core.flag & BAM_FUNMAP)
 
-int fxt_error_parse(int argc, char *argv[])
-{
+int fxt_error_parse(int argc, char *argv[]) {
     setlocale(LC_NUMERIC, "");
     int c, parse_non_primary = 0;
     while ((c = getopt(argc, argv, "s")) >= 0) {
@@ -1505,11 +1521,11 @@ int fxt_trimF(int argc, char *argv[]) {
     return 0;
 }
 
-int main(int argc, char*argv[])
-{
+int main(int argc, char*argv[]) {
     if (argc < 2) return usage();
     if (strcmp(argv[1], "filter") == 0 || strcmp(argv[1], "fl") == 0) fxt_filter(argc-1, argv+1);
     else if (strcmp(argv[1], "filter-name") == 0 || strcmp(argv[1], "fn") == 0) fxt_filter_name(argc-1, argv+1);
+    else if (strcmp(argv[1], "filter-qual") == 0 || strcmp(argv[1], "fq") == 0) fxt_filter_qual(argc-1, argv+1);
     else if (strcmp(argv[1], "filter-bam") == 0 || strcmp(argv[1], "fb") == 0) fxt_filter_bam(argc-1, argv+1);
     else if (strcmp(argv[1], "filter-bam-name") == 0 || strcmp(argv[1], "fbn") == 0) fxt_filter_bam_name(argc-1, argv+1);
     else if (strcmp(argv[1], "split-fx") == 0 || strcmp(argv[1], "sx") == 0) fxt_split_fx(argc-1, argv+1);
