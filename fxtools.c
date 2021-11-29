@@ -43,8 +43,9 @@ int usage(void)
     fprintf(stderr, "         error-parse (ep)      parse indel and mismatch error based on CIGAR and NM in SAM/BAM/GAF file.\n");
     fprintf(stderr, "         dna2rna (dr)          convert DNA fa/fq to RNA fa/fq.\n");
     fprintf(stderr, "         rna2dna (rd)          convert RNA fa/fq to DNA fa/fq.\n");
-    fprintf(stderr, "         trim (tr)             trim poly A tail(poly T head).\n");
-    fprintf(stderr, "         trimF (tf)            trim and filter with poly A tail(poly T head). Only poly A contained reads will be kept.\n");
+    fprintf(stderr, "         trim (tr)             trim polyA tail(polyT head).\n");
+    fprintf(stderr, "         trimF (tf)            trim and filter with polyA tail(polyT head). Only polyA reads will be kept.\n");
+    fprintf(stderr, "         bam-add-seq (bt)      add polyA sequence to BAM record.\n");
     fprintf(stderr, "\n");
     return 1;
 }
@@ -1521,6 +1522,48 @@ int fxt_trimF(int argc, char *argv[]) {
     return 0;
 }
 
+char bam_qseq_table[17] = "NACNGNNNTNNNNNNN";
+char bam_rc_qseq_table[17] = "NTGNCNNNANNNNNNN";
+
+// add bam tag
+int fxt_bam_add_seq(int argc, char *argv[]) {
+    if (argc != 3) {
+        err_printf("Usage: fxtools bam-add-seq in.bam tag > out.bam\n");
+        err_printf("\n");
+        return 0;
+    }
+    char *in_bam_fn = argv[1], *tag = argv[2];
+    htsFile *out = hts_open("-", "wb");
+
+    samFile *in; bam_hdr_t *hdr; bam1_t *rec = bam_init1();
+
+    if ((in = sam_open(in_bam_fn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", in_bam_fn);
+    if ((hdr = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", in_bam_fn);
+    if (sam_hdr_write(out, hdr) < 0) err_fatal_simple("Fail to write bam header.");
+
+    int r, k, seq_len; uint8_t *bam_bseq;
+    while ((r = sam_read1(in, hdr, rec)) >= 0) {
+        if (rec->core.flag & BAM_FUNMAP) continue;
+        bam_bseq = bam_get_seq(rec);
+        seq_len = rec->core.l_qseq;
+        char *polya_seq = (char*)_err_malloc(sizeof(char) * (seq_len+1));
+        if ((rec->core.flag & BAM_FREVERSE) != 0) { // reverse
+            for (k = 0; k < seq_len; ++k) polya_seq[k] = bam_rc_qseq_table[bam_seqi(bam_bseq, seq_len-k-1)];
+        } else { // forware
+            for (k = 0; k < seq_len; ++k) polya_seq[k] = bam_qseq_table[bam_seqi(bam_bseq, k)];
+        }
+        polya_seq[k] = '\0';
+        bam_aux_append(rec, tag, 'Z', seq_len+1, (uint8_t*)polya_seq);
+        free(polya_seq);
+
+        if (sam_write1(out, hdr, rec) < 0) err_fatal_simple("Fail to write bam record.");
+    }
+
+    if (hdr) bam_hdr_destroy(hdr); if (in) sam_close(in); if (rec) bam_destroy1(rec);
+    hts_close(out);
+    return 0;
+}
+
 int main(int argc, char*argv[]) {
     if (argc < 2) return usage();
     if (strcmp(argv[1], "filter") == 0 || strcmp(argv[1], "fl") == 0) fxt_filter(argc-1, argv+1);
@@ -1546,6 +1589,7 @@ int main(int argc, char*argv[]) {
     else if (strcmp(argv[1], "trim") == 0 || strcmp(argv[1], "tr") == 0) fxt_trim(argc-1, argv+1);
     else if (strcmp(argv[1], "trimF") == 0 || strcmp(argv[1], "tr") == 0) fxt_trimF(argc-1, argv+1);
     else if (strcmp(argv[1], "sam-flag") == 0 || strcmp(argv[1], "sf") == 0) fxt_sam_flag(argc-1, argv+1);
+    else if (strcmp(argv[1], "bam-add-seq") == 0 || strcmp(argv[1], "bt") == 0) fxt_bam_add_seq(argc-1, argv+1);
     else {fprintf(stderr, "unknow command [%s].\n", argv[1]); return 1; }
 
     return 0;
