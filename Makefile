@@ -3,7 +3,7 @@ CFLAGS  =	-Wall -O2 -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unuse
 DFLAGS  =	-g -Wall  
 HTSLIB_DIR = ./htslib
 HTSLIB  =   $(HTSLIB_DIR)/libhts.a
-LIB     =	$(HTSLIB) -lm -lz -lpthread
+LIB     =	$(HTSLIB) -lm -lz -lpthread -lbz2 -llzma -lcurl
 INCLUDE = -I ./htslib
 
 ifneq ($(gdb),)
