@@ -343,7 +343,7 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
             int hit = 0;
             strcpy(qname, bam_get_qname(b));
             if (n) {
-                khint_t pos = kh_get(str, h, seq->name.s);
+                khint_t pos = kh_get(str, h, qname);
                 if (pos == kh_end(h)) hit = 0;
                 else hit = 1;
             } else {
