@@ -176,10 +176,10 @@ int fxt_filter_name(int argc, char* argv[]) {
             if (line[strlen(line)-1] == '\n')
                 line[strlen(line)-1] = '\0';
             if (name_n == name_m) {
-                name_array = (char**)_err_realloc(name_array, name_n << 1 * sizeof(char*));
-                for (i = name_n; i < name_n << 1; ++i)
+                name_m = name_n+1; kroundup32(name_m);
+                name_array = (char**)_err_realloc(name_array, name_m * sizeof(char*));
+                for (i = name_n; i < name_m; ++i)
                     name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
-                name_m = name_n << 1;
             }
             strcpy(name_array[name_n++], strtok(line, " \t"));
         }
@@ -320,10 +320,10 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
             if (line[strlen(line)-1] == '\n')
                 line[strlen(line)-1] = '\0';
             if (name_n == name_m) {
-                name_array = (char**)_err_realloc(name_array, name_n << 1 * sizeof(char*));
-                for (i = name_n; i < name_n << 1; ++i)
+                name_m = name_n+1; kroundup32(name_m);
+                name_array = (char**)_err_realloc(name_array, name_m * sizeof(char*));
+                for (i = name_n; i < name_m ; ++i)
                     name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
-                name_m = name_n << 1;
             }
             strcpy(name_array[name_n++], line);
         }
@@ -467,7 +467,7 @@ int fxt_re_co(int argc, char *argv[]) {
     }
     gzFile readfp;
     kseq_t *read_seq;
-    int seq_len = 100000;
+    int seq_len = 1024;
     char *seq = (char*)malloc(seq_len*sizeof(char));
     int8_t *seq_n = (int8_t*)malloc(seq_len*sizeof(int8_t));
     FILE *out = stdout;
@@ -481,7 +481,7 @@ int fxt_re_co(int argc, char *argv[]) {
     {
        if (len > seq_len)
        {
-           seq_len <<= 1;
+           seq_len = len; kroundup32(seq_len);
            seq = (char*)realloc(seq, seq_len*sizeof(char));
            seq_n = (int8_t*)realloc(seq_n, seq_len*sizeof(char));
            if (seq == NULL || seq_n == NULL)
@@ -760,7 +760,7 @@ int fxt_len_parse(int argc, char *argv[]) {
             {
                 fprintf(stdout, "%s\t%d\n", seq->name.s, (int)seq->seq.l);       
                 if (n == m) {
-                    m <<= 1;
+                    m = n+1; kroundup32(m);
                     len = (int*)_err_realloc(len, m * sizeof(int));
                 }
                 len[n++] = seq->seq.l;
@@ -771,7 +771,7 @@ int fxt_len_parse(int argc, char *argv[]) {
             while (gzgets(infp, buff, 1024) != NULL) {
                 sscanf(buff, "%*s %d", &seq_len);
                 if (n == m) {
-                    m <<= 1;
+                    m = n+1; kroundup32(m);
                     len = (int*)_err_realloc(len, m * sizeof(int));
                 }
                 len[n++] = seq_len; 
