@@ -11,12 +11,14 @@
 #include "fxtools.h"
 #include "parse.h"
 #include "kseq.h"
+#include "khash.h"
 #include "htslib/sam.h"
 #include "htslib/faidx.h"
 
 #define _ll_t long long
 
 KSEQ_INIT(gzFile, gzread)
+KHASH_MAP_INIT_STR(str, uint32_t)
 
 int usage(void)
 {
@@ -161,27 +163,32 @@ int fxt_filter_name(int argc, char* argv[]) {
     kseq_t *seq = kseq_init(infp);
 
     if (input_list) {
-        int i, name_n=0, name_m = 10; FILE *fp;
+        int i; FILE *fp; char line[1024];
+        int name_n=0, name_m = 10;
         char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
         for (i = 0; i < name_m; ++i) 
             name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+
+        // for fast exact match
+        khash_t(str) *h = kh_init(str); int absent;
         // read name/sub_name
         if (n) {
             fp = xopen(name, "r");
         } else {
             fp = xopen(sub_name, "r");
         }
-        char line[1024];
         while (fgets(line, 1024, fp) != NULL) {
-            if (line[strlen(line)-1] == '\n')
-                line[strlen(line)-1] = '\0';
+            if (line[strlen(line)-1] == '\n') line[strlen(line)-1] = '\0';
             if (name_n == name_m) {
                 name_m = name_n+1; kroundup32(name_m);
                 name_array = (char**)_err_realloc(name_array, name_m * sizeof(char*));
                 for (i = name_n; i < name_m; ++i)
                     name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
             }
-            strcpy(name_array[name_n++], strtok(line, " \t"));
+            strcpy(name_array[name_n], strtok(line, " \t"));
+
+            khint_t pos = kh_put(str, h, name_array[name_n], &absent);
+            if (absent) kh_val(h, pos) = name_n++;
         }
 
         err_fclose(fp);
@@ -189,12 +196,9 @@ int fxt_filter_name(int argc, char* argv[]) {
         while (kseq_read(seq) >= 0) {
             hit = 0;
             if (n) {
-                for (i = 0; i < name_n; ++i) {
-                    if (strcmp(seq->name.s, name_array[i]) == 0) {
-                        hit = 1;
-                        break;
-                    }
-                }
+                khint_t pos = kh_get(str, h, seq->name.s);
+                if (pos == kh_end(h)) hit = 0;
+                else hit = 1;
             } else { // m
                 if (seq->comment.l > 0) {
                     for (i = 0; i < name_n; ++i) {
@@ -215,6 +219,7 @@ int fxt_filter_name(int argc, char* argv[]) {
             if (hit) print_seq(out, seq); 
         }
 
+        kh_destroy(str, h);
         for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
     } else {
         while (kseq_read(seq) >= 0)
