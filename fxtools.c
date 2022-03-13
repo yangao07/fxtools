@@ -314,6 +314,8 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
         char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
         for (i = 0; i < name_m; ++i) 
             name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+        // for fast exact match
+        khash_t(str) *h = kh_init(str); int absent;
         // read name/sub_name
         if (n) {
             fp = xopen(name, "r");
@@ -330,7 +332,9 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
                 for (i = name_n; i < name_m ; ++i)
                     name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
             }
-            strcpy(name_array[name_n++], line);
+            strcpy(name_array[name_n], line);
+            khint_t pos = kh_put(str, h, name_array[name_n], &absent);
+            if (absent) kh_val(h, pos) = name_n++;
         }
 
         err_fclose(fp);
@@ -339,12 +343,9 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
             int hit = 0;
             strcpy(qname, bam_get_qname(b));
             if (n) {
-                for (i = 0; i < name_n; ++i) {
-                    if (strcmp(qname, name_array[i]) == 0) {
-                        hit = 1;
-                        break;
-                    }
-                }
+                khint_t pos = kh_get(str, h, seq->name.s);
+                if (pos == kh_end(h)) hit = 0;
+                else hit = 1;
             } else {
                 for (i = 0; i < name_n; ++i) {
                     if (strstr(qname, name_array[i]) != NULL) {
@@ -357,6 +358,7 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
                 if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
             }
         }
+        kh_destroy(str, h);
         for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
     } else {
         while (sam_read1(in, h, b) >= 0) {
