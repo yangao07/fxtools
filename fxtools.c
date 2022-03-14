@@ -1,23 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <zlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <getopt.h>
 #include <libgen.h>
 #include <stdint.h>
 #include <locale.h>
-#include "utils.h"
 #include "fxtools.h"
 #include "parse.h"
-#include "kseq.h"
 #include "khash.h"
-#include "htslib/sam.h"
-#include "htslib/faidx.h"
+#include "htsutils.h"
 
 #define _ll_t long long
 
-KSEQ_INIT(gzFile, gzread)
 KHASH_MAP_INIT_STR(str, uint32_t)
 
 int usage(void)
@@ -140,16 +135,23 @@ int fxt_filter_bam(int argc, char *argv[]) {
 }
 
 int fxt_filter_name(int argc, char* argv[]) {
-    int c, n=0, m=0, input_list=0; char name[1024], sub_name[1024];
+    int i, c, exact_match=0, sub_match=0, input_list=0; char name[1024], sub_name[1024];
+    int name_n=0, name_m = 10;
+    char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
+    for (i = 0; i < name_m; ++i)
+        name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+    // hash table for names
+    khash_t(str) *h = kh_init(str); int absent;
+        
     while ((c = getopt(argc, argv, "n:m:l")) >= 0) {
         switch (c) {
-            case 'n': n=1, strcpy(name, optarg); break;
-            case 'm': m=1, strcpy(sub_name, optarg); break;
+            case 'n': exact_match=1, strcpy(name, optarg); break;
+            case 'm': sub_match=1, strcpy(sub_name, optarg); break;
             case 'l': input_list = 1; break;
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
         }
     }
-    if (n + m != 1 || argc - optind != 1) {
+    if (exact_match + sub_match != 1 || argc - optind != 1) {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools filter-name [-n name] [-m sub-name] [-l] <in.fa/fq> > <out.fa/fq>\n");
         fprintf(stderr, "      -n [STR]    only output read with specified name.\n");
@@ -158,25 +160,15 @@ int fxt_filter_name(int argc, char* argv[]) {
         fprintf(stderr, "\n");
         exit(-1);
     }
-    gzFile infp = xzopen(argv[optind], "r");
-    FILE *out = stdout;
-    kseq_t *seq = kseq_init(infp);
+    char *fn = argv[optind];
+    int is_fq = is_fastq(fn);
+    if (is_fq < 0) err_fatal_simple("Unexpected input file format.");
 
     if (input_list) {
-        int i; FILE *fp; char line[1024];
-        int name_n=0, name_m = 10;
-        char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
-        for (i = 0; i < name_m; ++i) 
-            name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
-
-        // for fast exact match
-        khash_t(str) *h = kh_init(str); int absent;
+        FILE *fp; char line[1024];
         // read name/sub_name
-        if (n) {
-            fp = xopen(name, "r");
-        } else {
-            fp = xopen(sub_name, "r");
-        }
+        if (exact_match) fp = xopen(name, "r");
+        else fp = xopen(sub_name, "r");
         while (fgets(line, 1024, fp) != NULL) {
             if (line[strlen(line)-1] == '\n') line[strlen(line)-1] = '\0';
             if (name_n == name_m) {
@@ -190,56 +182,77 @@ int fxt_filter_name(int argc, char* argv[]) {
             khint_t pos = kh_put(str, h, name_array[name_n], &absent);
             if (absent) kh_val(h, pos) = name_n++;
         }
-
         err_fclose(fp);
-        int hit;
+    } else { // only 1 name
+        if (exact_match) strcpy(name_array[name_n], name);
+        else strcpy(name_array[name_n], sub_name);
+        khint_t pos = kh_put(str, h, name_array[name_n], &absent);
+        if (absent) kh_val(h, pos) = name_n++;
+    }
+
+    if (exact_match) { // exact match
+        char *fai_fn = (char*)_err_malloc(strlen(fn)+5);
+        strcpy(fai_fn, fn); strcat(fai_fn, ".fai");
+        faidx_t *fai = fai_load3_format(fn, fai_fn, NULL, FAI_CREATE, is_fq == 0 ? FAI_FASTA : FAI_FASTQ);
+        if ( !fai ) {
+            fprintf(stderr, "Could not load/build fai index %s.fai\n", fn);
+            return EXIT_FAILURE;
+        }
+        // iterate all names
+        for (i = kh_begin(h); i != kh_end(h); ++i) {
+            if (!kh_exist(h, i)) continue;
+            char *read_name = kh_key(h, i);
+            char reg[1024];
+            int seq_len = faidx_seq_len(fai, read_name);
+            if (seq_len < 0) continue;
+            sprintf(reg, "%s:%d-%d", read_name, 1, seq_len);
+            char *seq = fai_fetch(fai, reg, &seq_len);
+            if (seq_len < 0) {
+                err_printf("Failed to fetch sequence in %s\n", reg);
+                return EXIT_FAILURE;
+            }
+            if (is_fq) {
+                // fetch qual
+                char *qual = fai_fetchqual(fai, reg, &seq_len); 
+                if (seq_len < 0) {
+                    err_printf("Failed to fetch qual in %s\n", reg);
+                    return EXIT_FAILURE;
+                }
+                fprintf(stdout, "@%s\n%s\n+\n%s\n", read_name, seq, qual);
+                free(qual);
+            } else {
+                fprintf(stdout, ">%s\n%s\n", read_name, seq);
+            }
+            free(seq);
+        }
+        fai_destroy(fai); free(fai_fn);
+    } else { // sub match
+        gzFile infp = xzopen(fn, "r");
+        FILE *out = stdout;
+        kseq_t *seq = kseq_init(infp);
         while (kseq_read(seq) >= 0) {
-            hit = 0;
-            if (n) {
-                khint_t pos = kh_get(str, h, seq->name.s);
-                if (pos == kh_end(h)) hit = 0;
-                else hit = 1;
-            } else { // m
-                if (seq->comment.l > 0) {
-                    for (i = 0; i < name_n; ++i) {
-                        if (strstr(seq->name.s, name_array[i]) != NULL || strstr(seq->comment.s, name_array[i]) != NULL) {
-                            hit = 1;
-                            break;
-                        }
+            int hit = 0;
+            if (seq->comment.l > 0) {
+                for (i = 0; i < name_n; ++i) {
+                    if (strstr(seq->name.s, name_array[i]) != NULL || strstr(seq->comment.s, name_array[i]) != NULL) {
+                        hit = 1; break;
                     }
-                } else {
-                    for (i = 0; i < name_n; ++i) {
-                        if (strstr(seq->name.s, name_array[i]) == NULL) {
-                            hit = 1;
-                            break;
-                        }
+                }
+            } else {
+                for (i = 0; i < name_n; ++i) {
+                    if (strstr(seq->name.s, name_array[i]) != NULL) {
+                        hit = 1; break;
                     }
                 }
             }
             if (hit) print_seq(out, seq); 
         }
-
-        kh_destroy(str, h);
-        for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
-    } else {
-        while (kseq_read(seq) >= 0)
-        {
-            if (n) {
-                if (strcmp(seq->name.s, name) != 0) continue;
-            } else { // m
-                if (seq->comment.l > 0) {
-                    if (strstr(seq->name.s, sub_name) == NULL && strstr(seq->comment.s, sub_name) == NULL) continue;
-                } else {
-                    if (strstr(seq->name.s, sub_name) == NULL) continue;
-                }
-            }
-            print_seq(out, seq); 
-        }
+        err_fclose(out);
+        kseq_destroy(seq);
+        err_gzclose(infp);
     }
-
-    err_fclose(out);
-    kseq_destroy(seq);
-    err_gzclose(infp);
+    kh_destroy(str, h);
+    for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
     return 0;
 }
 
@@ -279,16 +292,16 @@ int fxt_filter_qual(int argc, char* argv[]) {
 }
 
 int fxt_filter_bam_name(int argc, char *argv[]) {
-    int c, n=0, m=0, input_list=0; char name[1024], sub_name[1024];
+    int c, exact_match=0, sub_match=0, input_list=0; char name[1024], sub_name[1024];
     while ((c = getopt(argc, argv, "n:m:l")) >= 0) {
         switch (c) {
-            case 'n': n=1, strcpy(name, optarg); break;
-            case 'm': m=1, strcpy(sub_name, optarg); break;
+            case 'n': exact_match=1, strcpy(name, optarg); break;
+            case 'm': sub_match=1, strcpy(sub_name, optarg); break;
             case 'l': input_list=1; break;
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
         }
     }
-    if (n + m != 1 || argc - optind != 1) 
+    if (exact_match + sub_match != 1 || argc - optind != 1) 
     {
         fprintf(stderr, "\n");
         fprintf(stderr, "Usage: fxtools filter-bam-name [-n name] [-m sub-name] [-l] <in.bam/sam> > <out.bam>\n");
@@ -300,6 +313,13 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
         exit(-1);
     }
 
+    int i, name_n=0, name_m = 10;
+    char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
+    for (i = 0; i < name_m; ++i) 
+        name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
+    // for fast exact match
+    khash_t(str) *hash = kh_init(str); int absent;
+
     samFile *in, *out; bam_hdr_t *h; bam1_t *b;
     if ((in = sam_open(argv[optind], "rb")) == NULL) err_fatal_core(__func__, "Cannot open \"%s\"\n", argv[optind]);
     if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "Couldn't read header for \"%s\"\n", argv[optind]);
@@ -308,16 +328,11 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
     if ((out = sam_open_format("-", "wb", NULL)) == NULL) err_fatal_simple("Cannot open \"-\"\n");
     if (sam_hdr_write(out, h) != 0) err_fatal_simple("Error in writing SAM header\n"); //sam header
 
-    char qname[1024];
+    char qname[1024], qual[1024];
     if (input_list) {
-        int i, name_n=0, name_m = 10; FILE *fp;
-        char **name_array = (char**)_err_malloc(name_m * sizeof(char*));
-        for (i = 0; i < name_m; ++i) 
-            name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
-        // for fast exact match
-        khash_t(str) *h = kh_init(str); int absent;
         // read name/sub_name
-        if (n) {
+        FILE *fp;
+        if (exact_match) {
             fp = xopen(name, "r");
         } else {
             fp = xopen(sub_name, "r");
@@ -333,44 +348,38 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
                     name_array[i] = (char*)_err_malloc(1024 * sizeof(char));
             }
             strcpy(name_array[name_n], line);
-            khint_t pos = kh_put(str, h, name_array[name_n], &absent);
-            if (absent) kh_val(h, pos) = name_n++;
+            khint_t pos = kh_put(str, hash, name_array[name_n], &absent);
+            if (absent) kh_val(hash, pos) = name_n++;
         }
-
         err_fclose(fp);
-
-        while (sam_read1(in, h, b) >= 0) {
-            int hit = 0;
-            strcpy(qname, bam_get_qname(b));
-            if (n) {
-                khint_t pos = kh_get(str, h, qname);
-                if (pos == kh_end(h)) hit = 0;
-                else hit = 1;
-            } else {
-                for (i = 0; i < name_n; ++i) {
-                    if (strstr(qname, name_array[i]) != NULL) {
-                        hit = 1;
-                        break;
-                    }
+    } else {
+        if (exact_match) strcpy(name_array[name_n], name);
+        else strcpy(name_array[name_n], sub_name);
+        khint_t pos = kh_put(str, hash, name_array[name_n], &absent);
+        if (absent) kh_val(hash, pos) = name_n++;
+    }
+    while (sam_read1(in, h, b) >= 0) {
+        int hit = 0;
+        strcpy(qname, bam_get_qname(b));
+        strcpy(qual, bam_get_qual(b));
+        if (exact_match) {
+            khint_t pos = kh_get(str, hash, qname);
+            if (pos == kh_end(hash)) hit = 0;
+            else hit = 1;
+        } else {
+            for (i = 0; i < name_n; ++i) {
+                if (strstr(qname, name_array[i]) != NULL || strstr(qual, name_array[i])) {
+                    hit = 1;
+                    break;
                 }
             }
-            if (hit) {
-                if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
-            }
         }
-        kh_destroy(str, h);
-        for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
-    } else {
-        while (sam_read1(in, h, b) >= 0) {
-            strcpy(qname, bam_get_qname(b));
-            if (n) {
-                if (strcmp(qname, name) != 0) continue;
-            } else { // m
-                if (strstr(qname, sub_name) == NULL) continue;
-            }
+        if (hit) {
             if (sam_write1(out, h, b) < 0) err_fatal_simple("Error in writing SAM record\n");
         }
     }
+    for(i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
+    kh_destroy(str, hash);
     bam_destroy1(b); bam_hdr_destroy(h); sam_close(in); sam_close(out);
     return 0;
 }
@@ -608,15 +617,15 @@ int fxt_seq_dis(int argc, char *argv[]) {
         fprintf(stderr, "\n"); 
         exit(-1);
     }
-    faidx_t *fai = fai_load(argv[1]);
-    char fai_fn[1024];
+    int is_fq = is_fastq(argv[1]);
+    if (is_fq < 0) err_fatal_simple("Unexpected input file format.");
+
+    char *fai_fn = (char*)_err_malloc(strlen(argv[1])+5);
+    strcpy(fai_fn, argv[1]); strcat(fai_fn, ".fai");
+    faidx_t *fai = fai_load3_format(argv[1], fai_fn, NULL, FAI_CREATE, is_fq == 0 ? FAI_FASTA : FAI_FASTQ);
     if ( !fai ) {
-        fprintf(stderr, "Could not load fai index of %s\n", argv[1]);
-        fprintf(stderr, "Building fai index of %s\n", argv[1]);
-        if (fai_build3(argv[1], fai_fn, NULL) != 0) {
-            fprintf(stderr, "Could not build fai index %s.fai\n", argv[1]);
-            return EXIT_FAILURE;
-        }
+        fprintf(stderr, "Could not load/build fai index %s.fai\n", argv[1]);
+        return EXIT_FAILURE;
     }
 
     int exit_status = EXIT_SUCCESS;
@@ -1045,6 +1054,7 @@ int fxt_duplicate_read(int argc, char *argv[]) {
     err_fclose(outfp);
     return 0;
 }
+
 int fxt_duplicate_seq(int argc, char *argv[]) {
     if (argc != 3) {
         fprintf(stderr, "\n");
@@ -1085,6 +1095,7 @@ int fxt_duplicate_seq(int argc, char *argv[]) {
     err_fclose(outfp);
     return 0;
 }
+
 #define bam_unmap(b) ((b)->core.flag & BAM_FUNMAP)
 
 int fxt_error_parse(int argc, char *argv[]) {
