@@ -194,10 +194,12 @@ int fxt_filter_name(int argc, char* argv[]) {
         char *fai_fn = (char*)_err_malloc(strlen(fn)+5);
         strcpy(fai_fn, fn); strcat(fai_fn, ".fai");
         faidx_t *fai = fai_load3_format(fn, fai_fn, NULL, FAI_CREATE, is_fq == 0 ? FAI_FASTA : FAI_FASTQ);
+        fprintf(stderr, "Loading/building fai index %s.fai ... ", fn);
         if ( !fai ) {
-            fprintf(stderr, "Could not load/build fai index %s.fai\n", fn);
+            fprintf(stderr, "\nCould not load/build fai index %s.fai\n", fn);
             return EXIT_FAILURE;
         }
+        fprintf(stderr, "done\n");
         // iterate all names
         for (i = kh_begin(h); i != kh_end(h); ++i) {
             if (!kh_exist(h, i)) continue;
@@ -623,10 +625,12 @@ int fxt_seq_dis(int argc, char *argv[]) {
     char *fai_fn = (char*)_err_malloc(strlen(argv[1])+5);
     strcpy(fai_fn, argv[1]); strcat(fai_fn, ".fai");
     faidx_t *fai = fai_load3_format(argv[1], fai_fn, NULL, FAI_CREATE, is_fq == 0 ? FAI_FASTA : FAI_FASTQ);
+    fprintf(stderr, "Loading/building fai index %s.fai ... ", argv[1]);
     if ( !fai ) {
-        fprintf(stderr, "Could not load/build fai index %s.fai\n", argv[1]);
+        fprintf(stderr, "\nCould not load/build fai index %s.fai\n", argv[1]);
         return EXIT_FAILURE;
     }
+    fprintf(stderr, "done!\n");
 
     int exit_status = EXIT_SUCCESS;
 
