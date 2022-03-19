@@ -189,51 +189,14 @@ int fxt_filter_name(int argc, char* argv[]) {
         khint_t pos = kh_put(str, h, name_array[name_n], &absent);
         if (absent) kh_val(h, pos) = name_n++;
     }
-
-    if (exact_match) { // exact match
-        char *fai_fn = (char*)_err_malloc(strlen(fn)+5);
-        strcpy(fai_fn, fn); strcat(fai_fn, ".fai");
-        faidx_t *fai = fai_load3_format(fn, fai_fn, NULL, FAI_CREATE, is_fq == 0 ? FAI_FASTA : FAI_FASTQ);
-        fprintf(stderr, "Loading/building fai index %s.fai ... ", fn);
-        if ( !fai ) {
-            fprintf(stderr, "\nCould not load/build fai index %s.fai\n", fn);
-            return EXIT_FAILURE;
-        }
-        fprintf(stderr, "done\n");
-        // iterate all names
-        for (i = kh_begin(h); i != kh_end(h); ++i) {
-            if (!kh_exist(h, i)) continue;
-            char *read_name = kh_key(h, i);
-            char reg[1024];
-            int seq_len = faidx_seq_len(fai, read_name);
-            if (seq_len < 0) continue;
-            sprintf(reg, "%s:%d-%d", read_name, 1, seq_len);
-            char *seq = fai_fetch(fai, reg, &seq_len);
-            if (seq_len < 0) {
-                err_printf("Failed to fetch sequence in %s\n", reg);
-                return EXIT_FAILURE;
-            }
-            if (is_fq) {
-                // fetch qual
-                char *qual = fai_fetchqual(fai, reg, &seq_len); 
-                if (seq_len < 0) {
-                    err_printf("Failed to fetch qual in %s\n", reg);
-                    return EXIT_FAILURE;
-                }
-                fprintf(stdout, "@%s\n%s\n+\n%s\n", read_name, seq, qual);
-                free(qual);
-            } else {
-                fprintf(stdout, ">%s\n%s\n", read_name, seq);
-            }
-            free(seq);
-        }
-        fai_destroy(fai); free(fai_fn);
-    } else { // sub match
-        gzFile infp = xzopen(fn, "r");
-        FILE *out = stdout;
-        kseq_t *seq = kseq_init(infp);
-        while (kseq_read(seq) >= 0) {
-            int hit = 0;
+    gzFile infp = xzopen(fn, "r"); FILE *out = stdout; kseq_t *seq = kseq_init(infp);
+    while (kseq_read(seq) >= 0) {
+        int hit = 0;
+        if (exact_match) { // exact match
+            khint_t pos = kh_get(str, h, seq->name.s);
+            if (pos == kh_end(h)) hit = 0;
+            else hit = 1;
+        } else { // sub match
             if (seq->comment.l > 0) {
                 for (i = 0; i < name_n; ++i) {
                     if (strstr(seq->name.s, name_array[i]) != NULL || strstr(seq->comment.s, name_array[i]) != NULL) {
@@ -247,12 +210,10 @@ int fxt_filter_name(int argc, char* argv[]) {
                     }
                 }
             }
-            if (hit) print_seq(out, seq); 
         }
-        err_fclose(out);
-        kseq_destroy(seq);
-        err_gzclose(infp);
+        if (hit) print_seq(out, seq); 
     }
+    err_fclose(out); kseq_destroy(seq); err_gzclose(infp);
     kh_destroy(str, h);
     for (i = 0; i < name_m; ++i) free(name_array[i]); free(name_array);
     return 0;
