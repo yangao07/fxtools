@@ -291,7 +291,7 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
     if ((out = sam_open_format("-", "wb", NULL)) == NULL) err_fatal_simple("Cannot open \"-\"\n");
     if (sam_hdr_write(out, h) != 0) err_fatal_simple("Error in writing SAM header\n"); //sam header
 
-    char qname[1024], qual[1024];
+    char qname[1024];
     if (input_list) {
         // read name/sub_name
         FILE *fp;
@@ -324,14 +324,13 @@ int fxt_filter_bam_name(int argc, char *argv[]) {
     while (sam_read1(in, h, b) >= 0) {
         int hit = 0;
         strcpy(qname, bam_get_qname(b));
-        strcpy(qual, bam_get_qual(b));
         if (exact_match) {
             khint_t pos = kh_get(str, hash, qname);
             if (pos == kh_end(hash)) hit = 0;
             else hit = 1;
         } else {
             for (i = 0; i < name_n; ++i) {
-                if (strstr(qname, name_array[i]) != NULL || strstr(qual, name_array[i])) {
+                if (strstr(qname, name_array[i]) != NULL) {
                     hit = 1;
                     break;
                 }
