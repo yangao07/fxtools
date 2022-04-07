@@ -15,6 +15,16 @@
 
 KHASH_MAP_INIT_STR(str, uint32_t)
 
+char bam_qseq_table[17] = "NACNGNNNTNNNNNNN";
+char bam_rc_qseq_table[17] = "NTGNCNNNANNNNNNN";
+
+unsigned char nt16_bam_qseq_table[16] = {
+    4, 0, 1, 4, 2, 4, 4, 4, 3, 4, 4, 4, 4, 4, 4
+};
+unsigned char nt16_bam_qseq_rc_table[16] = {
+    4, 3, 2, 4, 1, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4
+};
+
 int usage(void)
 {
     fprintf(stderr, "Program: fxtools (light-weight processing tool for FASTA, FASTQ and BAM format data)\n");
@@ -29,6 +39,7 @@ int usage(void)
     fprintf(stderr, "         fq2fa (qa)            convert FASTQ format data to FASTA format data.\n");
     fprintf(stderr, "         fa2fq (aq)            convert FASTA format data to FASTQ format data.\n");
     fprintf(stderr, "         bam2bed (bb)          convert BAM file to BED file. seperated exon regions for spliced BAM\n");
+    fprintf(stderr, "         bam2fx (bf)           convert BAM file to FASTA/FASTQ file.\n");
     fprintf(stderr, "         re-co (rc)            convert DNA sequence(fa/fq) to its reverse-complementary sequence.\n");
     fprintf(stderr, "         seq-display (sd)      display a specified region of FASTA/FASTQ file.\n");
     fprintf(stderr, "         cigar-parse (cp)      parse the given cigar(stdout).\n");
@@ -1317,6 +1328,97 @@ int fxt_bam2bed(int argc, char *argv[]) {
     return 0;
 }
 
+int fxt_bam2fx(int argc, char *argv[]) {
+    int c, out_ref_base = 0, only_mapped=0, fq_out=0, include_non_primary;
+    while ((c = getopt(argc, argv, "rsmq")) >= 0) {
+        switch (c) {
+            case 'r': out_ref_base = 1; break;
+            case 's': include_non_primary = 1; break;
+            case 'm': only_mapped=1; break;
+            case 'q': fq_out= 1; break;
+            default: err_printf("Error, unknown option: -%c %s\n", c, optarg); break;
+        }
+    }
+    if (argc - optind < 1) {
+        err_printf("Usage: fxtools bam2fx in.bam [-rsmq] > out.fa/fq\n");
+        err_printf("         -r    output reference sequence base, instead of raw read sequence base.\n");
+        err_printf("         -s    include non-primary records in the output.\n");
+        err_printf("         -m    only output mapped sequence (discard clipped unmapped sequence).\n");
+        err_printf("         -q    output fastq format.\n");
+        err_printf("\n");
+        return 0;
+    }
+    if (only_mapped==0 && include_non_primary==1) {
+        fprintf(stderr, "Warning: For supplementary/secondary alignment records, only mapped seqeunce are output.\n");
+    }
+    char bamfn[1024];
+    strcpy(bamfn, argv[optind]);
+    samFile *in; bam_hdr_t *h; bam1_t *b;
+    if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
+    if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
+    b = bam_init1();
+    int i, r;
+    uint8_t *bam_bseq; char *bam_qual;
+    while ((r = sam_read1(in, h, b)) >= 0) {
+        if (b->core.flag & BAM_FUNMAP) continue;
+        if (include_non_primary == 0 && (b->core.flag & BAM_FSUPPLEMENTARY || b->core.flag & BAM_FSECONDARY)) continue;
+        bam_bseq = bam_get_seq(b); bam_qual = bam_get_qual(b);
+        int start, end, len = b->core.l_qseq, left_clip = 0, right_clip = 0;
+        int is_rev = (b->core.flag & BAM_FREVERSE) != 0;
+        if (only_mapped && !(b->core.flag & BAM_FSUPPLEMENTARY) && !(b->core.flag & BAM_FSECONDARY)) { // discard clipping sequence
+            int n_cigar = b->core.n_cigar; uint32_t *cigar = bam_get_cigar(b);
+            for (i = 0; i < n_cigar; ++i) {
+                int op = bam_cigar_op(cigar[i]);
+                if (i == 0 && (op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP)) {
+                    left_clip = bam_cigar_oplen(cigar[i]);
+                }
+                if (i == n_cigar-1 && (op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP)) {
+                    right_clip = bam_cigar_oplen(cigar[i]);
+                }
+            }
+            start = left_clip; end = len - right_clip;
+        } else {
+            start = 0; end = len;
+        }
+        if (out_ref_base == 0 && is_rev == 1) { // rc seq
+            if (fq_out) { // fastq
+                fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                for (i = end-1; i >= start; --i) {
+                    fprintf(stdout, "%c", bam_rc_qseq_table[bam_seqi(bam_bseq, i)]);
+                } fprintf(stdout, "\n");
+                fprintf(stdout, "+\n");
+                if (bam_qual[0] == 0xff) fprintf(stdout, '*');
+                else for (i = end-1; i >= start; --i) fprintf(stdout, "%c", bam_qual[i] + 33);
+                fprintf(stdout, "\n");
+            } else { // fasta
+                fprintf(stdout, ">%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                for (i = end-1; i >= start; --i) {
+                    fprintf(stdout, "%c", bam_rc_qseq_table[bam_seqi(bam_bseq, i)]);
+                } fprintf(stdout, "\n");
+            }
+        } else {
+            if (fq_out) { // fastq
+                fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                for (i = start; i < end; ++i) {
+                    fprintf(stdout, "%c", bam_qseq_table[bam_seqi(bam_bseq, i)]);
+                } fprintf(stdout, "\n");
+                fprintf(stdout, "+\n");
+                if (bam_qual[0] == 0xff) fprintf(stdout, '*');
+                else for (i = start; i < end; ++i) fprintf(stdout, "%c", bam_qual[i] + 33);
+                fprintf(stdout, "\n");
+            } else { // fasta
+                fprintf(stdout, ">%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                for (i = start; i < end; ++i) {
+                    fprintf(stdout, "%c", bam_qseq_table[bam_seqi(bam_bseq, i)]);
+                } fprintf(stdout, "\n");
+            }
+        }
+
+    }
+    bam_hdr_destroy(h); sam_close(in); bam_destroy1(b); 
+    return 0;
+}
+
 int fxt_sam_flag(int argc, char *argv[]) {
     if (argc != 3) {
         err_printf("Usage: fxtools sam-flag in.sam/bam flag > flag.out\n");
@@ -1504,9 +1606,6 @@ int fxt_trimF(int argc, char *argv[]) {
     return 0;
 }
 
-char bam_qseq_table[17] = "NACNGNNNTNNNNNNN";
-char bam_rc_qseq_table[17] = "NTGNCNNNANNNNNNN";
-
 // add bam tag
 int fxt_bam_add_seq(int argc, char *argv[]) {
     if (argc != 3) {
@@ -1558,6 +1657,7 @@ int main(int argc, char*argv[]) {
     else if (strcmp(argv[1], "fa2fq") == 0 || strcmp(argv[1], "aq") == 0) fxt_fa2fq(argc-1, argv+1);
     else if (strcmp(argv[1], "re-co") == 0 || strcmp(argv[1], "rc") == 0) fxt_re_co(argc-1, argv+1);
     else if (strcmp(argv[1], "bam2bed") == 0 || strcmp(argv[1], "bb") == 0) fxt_bam2bed(argc-1, argv+1);
+    else if (strcmp(argv[1], "bam2fx") == 0 || strcmp(argv[1], "bf") == 0) fxt_bam2fx(argc-1, argv+1);
     else if (strcmp(argv[1], "seq-display") == 0 || strcmp(argv[1], "sd") == 0) fxt_seq_dis(argc-1, argv+1);
     else if (strcmp(argv[1], "cigar-parse") == 0 || strcmp(argv[1], "cp") == 0) fxt_cigar_parse(argc-1, argv+1);
     else if (strcmp(argv[1], "length-parse") == 0 || strcmp(argv[1], "lp") == 0) fxt_len_parse(argc-1, argv+1);
