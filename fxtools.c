@@ -1329,7 +1329,7 @@ int fxt_bam2bed(int argc, char *argv[]) {
 }
 
 int fxt_bam2fx(int argc, char *argv[]) {
-    int c, out_ref_base = 0, only_mapped=0, fq_out=0, include_non_primary;
+    int c, out_ref_base = 0, only_mapped=0, fq_out=0, include_non_primary=0;
     while ((c = getopt(argc, argv, "rsmq")) >= 0) {
         switch (c) {
             case 'r': out_ref_base = 1; break;
