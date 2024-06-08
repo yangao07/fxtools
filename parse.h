@@ -169,10 +169,11 @@ int cigar_str_parse(char *cigar_str, int *match, int *mis, int *ins, int *del, i
     return 0;
 }
 
-int cigar_parse(bam1_t *b, uint32_t *cigar, int cigar_len, int *match, int *mis, int *ins, int *del, int *skip, int *clip) {
+int cigar_parse(bam1_t *b, uint32_t *cigar, int cigar_len, int *match, int *mis, int *ins, int *del, int *skip, int *clip, int indel_max_len) {
     int i, md, equal = 0, diff = 0;
     // int max_len = 50;
     *match = *mis = *ins = *del = *skip = *clip = 0;
+    int large_ins = 0, large_del = 0;
     for (i = 0; i < cigar_len; ++i) {
         uint32_t c = cigar[i];
         int len = bam_cigar_oplen(c);
@@ -180,8 +181,8 @@ int cigar_parse(bam1_t *b, uint32_t *cigar, int cigar_len, int *match, int *mis,
             case BAM_CMATCH: *match += len; break;
             case BAM_CEQUAL: equal += len; break;
             case BAM_CDIFF: diff += len; break;
-            case BAM_CINS: *ins += len; break;
-            case BAM_CDEL: *del += len; break;
+            case BAM_CINS: if (len > indel_max_len) large_ins += len; else *ins += len; break;
+            case BAM_CDEL: if (len > indel_max_len) large_del += len; else *del += len; break;
             case BAM_CREF_SKIP: *skip += len; break;
             case BAM_CSOFT_CLIP: *clip += len; break;
             case BAM_CHARD_CLIP: *clip += len; break;
@@ -196,7 +197,7 @@ int cigar_parse(bam1_t *b, uint32_t *cigar, int cigar_len, int *match, int *mis,
             return 0;
         }
         md = bam_aux2i(p);
-        *mis = md - *ins - *del;
+        *mis = md - *ins - large_ins - *del - large_del;
         *match = *match - *mis;
     } else {
         *mis = diff; *match = equal;

@@ -44,7 +44,8 @@ int usage(void)
     fprintf(stderr, "         seq-display (sd)      display a specified region of FASTA/FASTQ file.\n");
     fprintf(stderr, "         cigar-parse (cp)      parse the given cigar(stdout).\n");
     fprintf(stderr, "         length-parse (lp)     parse the length of sequences in fa/fq file.\n");
-    fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in fasta/fastq file.\n");
+    fprintf(stderr, "         merge-fa (mf)         merge the reads with same read name in a fasta/fastq file.\n");
+    fprintf(stderr, "         merge-fas (mfs)       merge the reads with same read name in two fasta/fastq files.\n");
     fprintf(stderr, "         merge-filter-fa (mff) merge and filter the reads with same read name in fasta file.\n");
     fprintf(stderr, "         duplicate-seq (ds)    duplicate all the read sequences with specific copy number.\n");
     fprintf(stderr, "         duplicate-read (dd)   duplicate all the read records with specific copy number.\n");
@@ -734,10 +735,10 @@ int fxt_len_parse(int argc, char *argv[]) {
         int not_len_file = 1;
         n = 0;
         gzFile infp = xzopen(argv[i], "r");
-        char buff[1024]; int buff_n;
+        char buff[1024]; // int buff_n;
         // check if input file is .len file
         if (strcmp(argv[i], "-") != 0) {
-            buff_n = gzread(infp, buff, 10);
+            gzread(infp, buff, 10);
             if (buff[0] != '>' && buff[0] != '@')
                 not_len_file = 0;
             err_gzclose(infp);
@@ -1075,25 +1076,27 @@ int fxt_duplicate_seq(int argc, char *argv[]) {
 
 int fxt_error_parse(int argc, char *argv[]) {
     setlocale(LC_NUMERIC, "");
-    int c, parse_non_primary = 0;
-    while ((c = getopt(argc, argv, "s")) >= 0) {
+    int c, parse_non_primary = 0, indel_max_len = 50;
+    while ((c = getopt(argc, argv, "sd:")) >= 0) {
         switch (c) {
             case 's': parse_non_primary=1; break;
+            case 'd': indel_max_len = atoi(optarg); break;
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg);
         }
     }
     if (argc - optind != 1)
     {
         fprintf(stderr, "\n"); 
-        fprintf(stderr, "Usage: fxtools error-parse <input.SAM/BAM/PAF/GAF> [-s] > error.out\n");
-        fprintf(stderr, "         -s    include non-primary records in the output.\n\n");
+        fprintf(stderr, "Usage: fxtools error-parse <input.SAM/BAM/PAF/GAF> [-sd] > error.out\n");
+        fprintf(stderr, "         -s    include non-primary records in the output.\n");
+        fprintf(stderr, "         -d    ignore insertion/deletion with length > [INT] during sequencing error calculation. [50]\n\n");
         return 1;
     }
     fprintf(stdout, "#READ_NAME\tREAD_LEN\tUNMAP\tINS\tDEL\tMIS\tMATCH\tCLIP\tSKIP\tERR_RATE\n");
-    char *qname;
-    long long tol_n=0, unmap=0, is_primary=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
-    int i, seq_len, unmap_flag=0, md, ins, del, mis, match, clip, skip;
-    int equal, diff;
+    char *qname="\0";
+    long long tol_n=0, unmap=0, tol_len=0, tol_ins=0, tol_del=0, tol_mis=0, tol_match=0, tol_clip=0, tol_skip=0;
+    int i, seq_len=-1, unmap_flag=0, ins, del, mis, match, clip, skip;
+    // int equal, diff;
 
     if (check_suf(argv[optind], ".sam") || check_suf(argv[optind], ".bam")) {
         samFile *in; bam_hdr_t *h; bam1_t *b;
@@ -1105,11 +1108,11 @@ int fxt_error_parse(int argc, char *argv[]) {
             if (!parse_non_primary && (b->core.flag & BAM_FSECONDARY || b->core.flag & BAM_FSUPPLEMENTARY)) continue;
             tol_n++;
             unmap_flag = 0;
-            md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
-            equal = 0, diff = 0;
+            ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+            // equal = 0, diff = 0;
             if (!bam_unmap(b)) {
                 uint32_t *cigar = bam_get_cigar(b); int cigar_len = b->core.n_cigar;
-                cigar_parse(b, cigar, cigar_len, &match, &mis, &ins, &del, &skip, &clip);
+                cigar_parse(b, cigar, cigar_len, &match, &mis, &ins, &del, &skip, &clip, indel_max_len);
                 seq_len = _bam_cigar2qlen(cigar_len, cigar);
             } else {
                 unmap++;
@@ -1125,8 +1128,8 @@ int fxt_error_parse(int argc, char *argv[]) {
         gzFile gaf_fp = err_xzopen_core(__func__, argv[optind], "r"); kstream_t *ks = ks_init(gaf_fp);
         kstring_t line = {0,0,0}; int dret;
         while (ks_getuntil(ks, KS_SEP_LINE, &line, &dret) >= 0) {
-            unmap_flag = 0; is_primary = 0;
-            md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+            unmap_flag = 0; 
+            ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
             // GAF: 
             //  0:qname, 1:qlen, 2:qs, 3: qe, 4:+/-, 5:path, 6:plen, 7:ps, 8:pe, 9:n_match, 10:n_aln, 11:mapq
             int l_aux, m_aux=0; uint8_t *aux=0, *info;
@@ -1176,8 +1179,8 @@ int fxt_error_parse(int argc, char *argv[]) {
         gzFile paf_fp = err_xzopen_core(__func__, argv[optind], "r"); kstream_t *ks = ks_init(paf_fp);
         kstring_t line = {0,0,0}; int dret;
         while (ks_getuntil(ks, KS_SEP_LINE, &line, &dret) >= 0) {
-            unmap_flag = 0; is_primary = 0;
-            md = 0, ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
+            unmap_flag = 0;
+            ins = 0, del = 0, mis = 0, match = 0, clip = 0, skip = 0;
             // PAF: 
             //  0:qname, 1:qlen, 2:qs(0), 3: qe(0), 4:+/-, 5:tname, 6:tlen, 7:ts, 8:te, 9:n_match, 10:n_aln, 11:mapq
             int l_aux, m_aux=0; uint8_t *aux=0, *info;
@@ -1328,22 +1331,51 @@ int fxt_bam2bed(int argc, char *argv[]) {
     return 0;
 }
 
+int get_bam_region_seq(hts_pos_t ref_pos, uint32_t *cigar, int n_cigar, hts_pos_t region_start, hts_pos_t region_end, int *read_start, int *read_end) {
+    int read_pos = 0;
+    int _start=-1, _end = -1;
+
+    for (int i = 0; i < n_cigar; ++i) {
+        int op = bam_cigar_op(cigar[i]);
+        int oplen = bam_cigar_oplen(cigar[i]);
+        if (bam_cigar_type(op) & 2) { // Consumes reference
+            // start
+            if (ref_pos <= region_start && ref_pos + oplen > region_start) {
+                if (_start == -1) _start = read_pos + (region_start - ref_pos);
+            }
+            // end
+            if (ref_pos <= region_end && ref_pos + oplen > region_end) {
+                if (_end == -1) _end = read_pos + (region_end - ref_pos) + 1;
+            }
+            ref_pos += oplen;
+        }
+        if (bam_cigar_type(op) & 1) { // Consumes query (read)
+            read_pos += oplen;
+        }
+    }
+    if (_start != -1) *read_start = _start;
+    if (_end != -1) *read_end = _end;
+    return 0;
+}
+
 int fxt_bam2fx(int argc, char *argv[]) {
-    int c, out_ref_base = 0, only_mapped=0, fq_out=0, include_non_primary=0;
-    while ((c = getopt(argc, argv, "rsmq")) >= 0) {
+    int c, out_ref_base = 0, only_mapped=0, only_region=0, fq_out=0, include_non_primary=0;
+    while ((c = getopt(argc, argv, "rgsmq")) >= 0) {
         switch (c) {
             case 'r': out_ref_base = 1; break;
             case 's': include_non_primary = 1; break;
             case 'm': only_mapped=1; break;
+            case 'g': only_region=1; break;
             case 'q': fq_out= 1; break;
             default: err_printf("Error, unknown option: -%c %s\n", c, optarg); break;
         }
     }
     if (argc - optind < 1) {
-        err_printf("Usage: fxtools bam2fx in.bam [-rsmq] > out.fa/fq\n");
+        err_printf("Usage: fxtools bam2fx in.bam [-rsmq] [region] > out.fa/fq\n");
         err_printf("         -r    output reference sequence base, instead of raw read sequence base.\n");
         err_printf("         -s    include non-primary records in the output.\n");
         err_printf("         -m    only output mapped sequence (discard clipped unmapped sequence).\n");
+        err_printf("         -g    only output sequence mapped to specified region.\n");
         err_printf("         -q    output fastq format.\n");
         err_printf("\n");
         return 0;
@@ -1351,22 +1383,51 @@ int fxt_bam2fx(int argc, char *argv[]) {
     if (only_mapped==0 && include_non_primary==1) {
         fprintf(stderr, "Warning: For supplementary/secondary alignment records, only mapped seqeunce are output.\n");
     }
-    char bamfn[1024];
+    char bamfn[1024], region[1024]="\0";
     strcpy(bamfn, argv[optind]);
-    samFile *in; bam_hdr_t *h; bam1_t *b;
+    if (argc - optind > 1) strcpy(region, argv[optind+1]);
+
+    if (only_region == 1 && region[0] == '\0') {
+        fprintf(stderr, "Error: -g option requires a region string.\n");
+        return 1;
+    }
+
+    samFile *in; bam_hdr_t *h; bam1_t *b; 
+    hts_idx_t *idx=NULL; hts_itr_t *iter=NULL;
+
     if ((in = sam_open(bamfn, "rb")) == NULL) err_fatal(__func__, "fail to open \"%s\"\n", bamfn);
     if ((h = sam_hdr_read(in)) == NULL) err_fatal(__func__, "fail to read header for \"%s\"\n", bamfn);
-    b = bam_init1();
+    if ((idx = sam_index_load(in, bamfn)) == NULL) err_fatal(__func__, "fail to load index for \"%s\"\n", bamfn);
+
+    int tid, flag=0; hts_pos_t region_beg, region_end;
+    if (region[0] != '\0') {
+        if (sam_parse_region(h, region, &tid, &region_beg, &region_end, flag) < 0) {
+            fprintf(stderr, "Error: failed to parse region '%s'\n", region);
+            return 1;
+        }
+        iter = sam_itr_queryi(idx, tid, region_beg, region_end);
+        if (iter == NULL) {
+            fprintf(stderr, "Error: failed to set region '%s'\n", region);
+            return 1;
+        }
+    }
     int i, r;
-    uint8_t *bam_bseq; char *bam_qual;
-    while ((r = sam_read1(in, h, b)) >= 0) {
+    b = bam_init1();
+    uint8_t *bam_bseq, *bam_qual;
+    while (1) {
+        if (region[0] != '\0') r = sam_itr_next(in, iter, b);
+        else r = sam_read1(in, h, b);
+        if (r < 0) break;
         if (b->core.flag & BAM_FUNMAP) continue;
         if (include_non_primary == 0 && (b->core.flag & BAM_FSUPPLEMENTARY || b->core.flag & BAM_FSECONDARY)) continue;
-        bam_bseq = bam_get_seq(b); bam_qual = bam_get_qual(b);
-        int start, end, len = b->core.l_qseq, left_clip = 0, right_clip = 0;
+
         int is_rev = (b->core.flag & BAM_FREVERSE) != 0;
-        if (only_mapped && !(b->core.flag & BAM_FSUPPLEMENTARY) && !(b->core.flag & BAM_FSECONDARY)) { // discard clipping sequence
-            int n_cigar = b->core.n_cigar; uint32_t *cigar = bam_get_cigar(b);
+        int n_cigar = b->core.n_cigar; uint32_t *cigar = bam_get_cigar(b);
+
+        int start = 0, end = b->core.l_qseq, read_len = b->core.l_qseq, left_clip = 0, right_clip = 0;
+        if (only_region) {
+            get_bam_region_seq(b->core.pos+1, cigar, n_cigar, region_beg+1, region_end, &start, &end); 
+        } else if (only_mapped) { // discard clipping sequence
             for (i = 0; i < n_cigar; ++i) {
                 int op = bam_cigar_op(cigar[i]);
                 if (i == 0 && (op == BAM_CSOFT_CLIP || op == BAM_CHARD_CLIP)) {
@@ -1376,38 +1437,38 @@ int fxt_bam2fx(int argc, char *argv[]) {
                     right_clip = bam_cigar_oplen(cigar[i]);
                 }
             }
-            start = left_clip; end = len - right_clip;
-        } else {
-            start = 0; end = len;
+            start = left_clip; end = read_len - right_clip;
         }
+
+        bam_bseq = bam_get_seq(b); bam_qual = bam_get_qual(b);
         if (out_ref_base == 0 && is_rev == 1) { // rc seq
             if (fq_out) { // fastq
-                fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), read_len, start, end);
                 for (i = end-1; i >= start; --i) {
                     fprintf(stdout, "%c", bam_rc_qseq_table[bam_seqi(bam_bseq, i)]);
                 } fprintf(stdout, "\n");
                 fprintf(stdout, "+\n");
-                if (bam_qual[0] == 0xff) fprintf(stdout, '*');
+                if (bam_qual[0] == 0xff) fprintf(stdout, "*");
                 else for (i = end-1; i >= start; --i) fprintf(stdout, "%c", bam_qual[i] + 33);
                 fprintf(stdout, "\n");
             } else { // fasta
-                fprintf(stdout, ">%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                fprintf(stdout, ">%s %d %d %d\n", bam_get_qname(b), read_len, start, end);
                 for (i = end-1; i >= start; --i) {
                     fprintf(stdout, "%c", bam_rc_qseq_table[bam_seqi(bam_bseq, i)]);
                 } fprintf(stdout, "\n");
             }
         } else {
             if (fq_out) { // fastq
-                fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), read_len, start, end);
                 for (i = start; i < end; ++i) {
                     fprintf(stdout, "%c", bam_qseq_table[bam_seqi(bam_bseq, i)]);
                 } fprintf(stdout, "\n");
                 fprintf(stdout, "+\n");
-                if (bam_qual[0] == 0xff) fprintf(stdout, '*');
+                if (bam_qual[0] == 0xff) fprintf(stdout, "*");
                 else for (i = start; i < end; ++i) fprintf(stdout, "%c", bam_qual[i] + 33);
                 fprintf(stdout, "\n");
             } else { // fasta
-                fprintf(stdout, ">%s %d %d %d\n", bam_get_qname(b), len, start, end);
+                fprintf(stdout, ">%s %d %d %d\n", bam_get_qname(b), read_len, start, end);
                 for (i = start; i < end; ++i) {
                     fprintf(stdout, "%c", bam_qseq_table[bam_seqi(bam_bseq, i)]);
                 } fprintf(stdout, "\n");
@@ -1415,9 +1476,11 @@ int fxt_bam2fx(int argc, char *argv[]) {
         }
 
     }
-    bam_hdr_destroy(h); sam_close(in); bam_destroy1(b); 
+    bam_destroy1(b); bam_hdr_destroy(h); sam_close(in);
+    if (idx != NULL) hts_idx_destroy(idx); if (iter != NULL) hts_itr_destroy(iter);
     return 0;
 }
+
 
 int fxt_sam_flag(int argc, char *argv[]) {
     if (argc != 3) {

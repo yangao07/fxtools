@@ -1,5 +1,5 @@
-CC      =	gcc
-CFLAGS  =	-Wall -O2 -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
+#CC      =	gcc
+CFLAGS  =	-Wall -O2  -Wno-unused-function -Wno-misleading-indentation
 DFLAGS  =	-g -Wall  
 HTSLIB_DIR = ./htslib
 HTSLIB  =   $(HTSLIB_DIR)/libhts.a
