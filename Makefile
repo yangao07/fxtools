@@ -1,4 +1,4 @@
-#CC      =	gcc
+CC      =	gcc
 CFLAGS  =	-Wall -O2  -Wno-unused-function -Wno-misleading-indentation
 DFLAGS  =	-g -Wall  
 HTSLIB_DIR = ./htslib
@@ -7,7 +7,7 @@ LIB     =	$(HTSLIB) -lm -lz -lpthread -lbz2 -llzma -lcurl
 INCLUDE = -I ./htslib
 
 ifneq ($(gdb),)
-	CFLAGS  =	-g -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
+	CFLAGS  =	-g -Wall -Wno-unused-variable -Wno-misleading-indentation -Wno-unused-but-set-variable -Wno-unused-function
 endif
 
 BIN_DIR =	.

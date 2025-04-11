@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include "utils.h"
-#include "kstring.h"
+#include "htslib/kstring.h"
 #include "htslib/sam.h"
 
 static inline int aux_type2size(int x)

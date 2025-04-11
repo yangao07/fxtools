@@ -458,7 +458,6 @@ int fxt_re_co(int argc, char *argv[]) {
     gzFile readfp;
     kseq_t *read_seq;
     int seq_len = 1024;
-    char *seq = (char*)malloc(seq_len*sizeof(char));
     int8_t *seq_n = (int8_t*)malloc(seq_len*sizeof(int8_t));
     FILE *out = stdout;
 
@@ -472,17 +471,15 @@ int fxt_re_co(int argc, char *argv[]) {
        if (len > seq_len)
        {
            seq_len = len; kroundup32(seq_len);
-           seq = (char*)realloc(seq, seq_len*sizeof(char));
            seq_n = (int8_t*)realloc(seq_n, seq_len*sizeof(char));
-           if (seq == NULL || seq_n == NULL)
+           if (seq_n == NULL)
            {
                fprintf(stderr, "memory is not enough.\n");
                exit(-1);
            }
        } 
-       seq = read_seq->seq.s;
        for (i = 0; i < len; i++)
-           seq_n[i] = nt_table[(int)seq[i]];
+           seq_n[i] = nt_table[(int)read_seq->seq.s[i]];
        if (read_seq->qual.l > 0) {
            fprintf(out, "@%s_reverse_complementary", read_seq->name.s);
            if (read_seq->comment.l > 0) fprintf(out, " %s", read_seq->comment.s);
@@ -1331,9 +1328,13 @@ int fxt_bam2bed(int argc, char *argv[]) {
     return 0;
 }
 
-int get_bam_region_seq(hts_pos_t ref_pos, uint32_t *cigar, int n_cigar, hts_pos_t region_start, hts_pos_t region_end, int *read_start, int *read_end) {
+int get_bam_region_seq(hts_pos_t ref_pos, uint32_t *cigar, int n_cigar, hts_pos_t region_start, hts_pos_t region_end, 
+                       int *region_read_start, int *region_read_end) {
     int read_pos = 0;
-    int _start=-1, _end = -1;
+    hts_pos_t ref_start = ref_pos, ref_end = ref_pos + bam_cigar2rlen(n_cigar, cigar);
+    int clip_start = 0, clip_end = bam_cigar2qlen(n_cigar, cigar);
+    int mapped_read_start = 0, mapped_read_end = 0;
+
 
     for (int i = 0; i < n_cigar; ++i) {
         int op = bam_cigar_op(cigar[i]);
@@ -1341,28 +1342,36 @@ int get_bam_region_seq(hts_pos_t ref_pos, uint32_t *cigar, int n_cigar, hts_pos_
         if (bam_cigar_type(op) & 2) { // Consumes reference
             // start
             if (ref_pos <= region_start && ref_pos + oplen > region_start) {
-                if (_start == -1) _start = read_pos + (region_start - ref_pos);
+                if (mapped_read_start == 0) mapped_read_start = read_pos + (region_start - ref_pos);
             }
             // end
             if (ref_pos <= region_end && ref_pos + oplen > region_end) {
-                if (_end == -1) _end = read_pos + (region_end - ref_pos) + 1;
+                if (mapped_read_end == 0) mapped_read_end = read_pos + (region_end - ref_pos) + 1;
             }
             ref_pos += oplen;
         }
         if (bam_cigar_type(op) & 1) { // Consumes query (read)
+            if (op == BAM_CSOFT_CLIP) {
+                if (i == 0 && clip_start == 0) clip_start = oplen;
+                if (i == n_cigar-1 && clip_end == INT32_MAX) clip_end = read_pos;
+            }
             read_pos += oplen;
         }
     }
-    if (_start != -1) *read_start = _start;
-    if (_end != -1) *read_end = _end;
+    // read start
+    if (ref_start >= region_start) *region_read_start = clip_start;
+    else *region_read_start = mapped_read_start;
+    // read end
+    if (ref_end <= region_end) *region_read_end = clip_end;
+    else *region_read_end = mapped_read_end;
     return 0;
 }
 
 int fxt_bam2fx(int argc, char *argv[]) {
-    int c, out_ref_base = 0, only_mapped=0, only_region=0, fq_out=0, include_non_primary=0;
-    while ((c = getopt(argc, argv, "rgsmq")) >= 0) {
+    int c, out_for_strand = 0, only_mapped=0, only_region=0, fq_out=0, include_non_primary=0;
+    while ((c = getopt(argc, argv, "fgsmq")) >= 0) {
         switch (c) {
-            case 'r': out_ref_base = 1; break;
+            case 'f': out_for_strand = 1; break;
             case 's': include_non_primary = 1; break;
             case 'm': only_mapped=1; break;
             case 'g': only_region=1; break;
@@ -1371,8 +1380,8 @@ int fxt_bam2fx(int argc, char *argv[]) {
         }
     }
     if (argc - optind < 1) {
-        err_printf("Usage: fxtools bam2fx in.bam [-rsmq] [region] > out.fa/fq\n");
-        err_printf("         -r    output reference sequence base, instead of raw read sequence base.\n");
+        err_printf("Usage: fxtools bam2fx in.bam [-fsmq] [region] > out.fa/fq\n");
+        err_printf("         -f    output forward strand sequence base, instead of raw read sequence base.\n");
         err_printf("         -s    include non-primary records in the output.\n");
         err_printf("         -m    only output mapped sequence (discard clipped unmapped sequence).\n");
         err_printf("         -g    only output sequence mapped to specified region.\n");
@@ -1427,6 +1436,7 @@ int fxt_bam2fx(int argc, char *argv[]) {
         int start = 0, end = b->core.l_qseq, read_len = b->core.l_qseq, left_clip = 0, right_clip = 0;
         if (only_region) {
             get_bam_region_seq(b->core.pos+1, cigar, n_cigar, region_beg+1, region_end, &start, &end); 
+            fprintf(stderr, "%s: %d-%d\n", bam_get_qname(b), start, end);
         } else if (only_mapped) { // discard clipping sequence
             for (i = 0; i < n_cigar; ++i) {
                 int op = bam_cigar_op(cigar[i]);
@@ -1441,7 +1451,7 @@ int fxt_bam2fx(int argc, char *argv[]) {
         }
 
         bam_bseq = bam_get_seq(b); bam_qual = bam_get_qual(b);
-        if (out_ref_base == 0 && is_rev == 1) { // rc seq
+        if (out_for_strand == 0 && is_rev == 1) { // rc seq
             if (fq_out) { // fastq
                 fprintf(stdout, "@%s %d %d %d\n", bam_get_qname(b), read_len, start, end);
                 for (i = end-1; i >= start; --i) {
