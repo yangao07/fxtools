@@ -689,7 +689,7 @@ int int_cmp(const void *a, const void *b) {
 
 void print_len_stats(char *fn, int *len, int n) {
     setlocale(LC_NUMERIC, "");
-    int i, min_len=INT32_MAX, max_len=INT32_MIN, n50_len=0, mean_len = 0;
+    int i, min_len=INT32_MAX, max_len=INT32_MIN, n50_len=0, mean_len = 0, median_len = 0;
     long long tot_len = 0, n50_tot_len = 0;
 
     qsort(len, n, sizeof(int), int_cmp);
@@ -698,6 +698,8 @@ void print_len_stats(char *fn, int *len, int n) {
         if (len[i] > max_len) max_len = len[i];
         if (len[i] < min_len) min_len = len[i];
     }
+    if (n % 2 == 1) median_len = len[n/2];
+    else median_len = (len[n/2-1] + len[n/2]) / 2;
     if (n == 0) mean_len = 0;
     else mean_len = tot_len / n;
 
@@ -711,6 +713,7 @@ void print_len_stats(char *fn, int *len, int n) {
     fprintf(stderr, "== \'%s\' read length stats ==\n", fn);
     fprintf(stderr, "Total reads\t%'16d\n", n);
     fprintf(stderr, "Total bases\t%'16lld\n", tot_len);
+    fprintf(stderr, "Median length\t%'16d\n", median_len);
     fprintf(stderr, "Mean length\t%'16d\n", mean_len);
     fprintf(stderr, "Min. length\t%'16d\n", min_len);
     fprintf(stderr, "Max. length\t%'16d\n", max_len);
